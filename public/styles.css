@@ -14,21 +14,30 @@
   --accent-3: #c08b5a;
 }
 
+html,
+body {
+  min-height: 100%;
+}
+
 body {
   margin: 0;
   font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif;
+  font-size: 16px;
   color: var(--ink);
   background:
     radial-gradient(1200px 500px at 10% -10%, #f1e1cf 0%, transparent 60%),
     radial-gradient(900px 400px at 90% -20%, #ead7c2 0%, transparent 60%),
     linear-gradient(180deg, var(--bg-1) 0%, var(--bg-2) 100%);
+  background-repeat: no-repeat;
+  background-size: cover;
+  background-attachment: fixed;
   animation: bgShift 10s ease-in-out infinite alternate;
 }
 
 .container {
-  max-width: 860px;
-  margin: 32px auto 48px;
-  padding: 0 16px;
+  max-width: 1040px;
+  margin: 36px auto 56px;
+  padding: 0 24px;
 }
 
 .hero {
@@ -37,7 +46,7 @@ body {
 
 h1 {
   margin: 0 0 6px;
-  font-size: 42px;
+  font-size: 48px;
   line-height: 1.06;
   letter-spacing: -0.02em;
   background: linear-gradient(90deg, #3f2f25 0%, #7a4e34 60%, #a47148 100%);
@@ -50,14 +59,14 @@ h1 {
   margin-top: 0;
   color: var(--muted);
   line-height: 1.5;
-  font-size: 16px;
+  font-size: 18px;
 }
 
 .card {
   background: var(--card);
   border: 1px solid var(--card-border);
   border-radius: 16px;
-  padding: 20px;
+  padding: 24px;
   display: grid;
   gap: 12px;
   box-shadow:
@@ -82,14 +91,15 @@ h1 {
 
 label {
   font-weight: 600;
-  font-size: 14px;
+  font-size: 15px;
   color: #1f2937;
 }
 
 input,
 textarea {
   width: 100%;
-  padding: 11px 12px;
+  padding: 13px 14px;
+  font-size: 15px;
   border: 1px solid #d8c3ad;
   border-radius: 10px;
   background: #fffaf4;
@@ -123,7 +133,8 @@ button {
   border-radius: 10px;
   background: linear-gradient(94deg, var(--accent-1) 0%, var(--accent-2) 55%, var(--accent-3) 100%);
   color: #fff;
-  padding: 12px 14px;
+  padding: 13px 16px;
+  font-size: 15px;
   font-weight: 700;
   cursor: pointer;
   transition: transform 0.15s ease, box-shadow 0.2s ease;
@@ -168,7 +179,7 @@ button:disabled {
   background: rgba(255, 255, 255, 0.95);
   border: 1px solid var(--card-border);
   border-radius: 14px;
-  padding: 16px;
+  padding: 18px;
   box-shadow: 0 8px 26px rgba(94, 62, 41, 0.1);
   margin-bottom: 16px;
   animation: fadeIn 0.35s ease both;
@@ -213,6 +224,7 @@ a.download:hover {
 .tip p {
   margin: 0;
   color: #6f5748;
+  font-size: 15px;
 }
 
 .preview {
@@ -303,9 +315,13 @@ a.download:hover {
 
 @media (max-width: 700px) {
   h1 {
-    font-size: 32px;
+    font-size: 36px;
   }
   .container {
     margin-top: 20px;
+    padding: 0 14px;
+  }
+  .card {
+    padding: 18px;
   }
 }

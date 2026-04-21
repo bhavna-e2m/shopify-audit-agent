@@ -587,14 +587,12 @@ export async function runAudit({
 
   process.env.AUDIT_FAST_MODE = fastMode ? "1" : "0";
   process.env.AUDIT_USE_FETCH_ONLY = fastMode ? "1" : "0";
-  const screenshotDir = includeScreenshots
+  const screenshotDir = persistReports && includeScreenshots
     ? path.join("reports", "screenshots", `${slugFromUrl(url)}-${todayISO()}`)
     : "";
-  const sectionScreenshotDir = path.join(
-    "reports",
-    "section-screenshots",
-    `${slugFromUrl(url)}-${todayISO()}`
-  );
+  const sectionScreenshotDir = persistReports
+    ? path.join("reports", "section-screenshots", `${slugFromUrl(url)}-${todayISO()}`)
+    : "";
   process.env.AUDIT_SCREENSHOT_DIR = screenshotDir;
   process.env.AUDIT_SECTION_SCREENSHOT_DIR = sectionScreenshotDir;
 
@@ -612,17 +610,16 @@ export async function runAudit({
     throw new Error("Could not crawl pages. Try again with a reachable storefront URL.");
   }
 
-  const referenceBenchmarkDir = path.join(
-    "reports",
-    "reference-screenshots",
-    `${slugFromUrl(url)}-${todayISO()}`
-  );
+  const referenceBenchmarkDir = persistReports
+    ? path.join("reports", "reference-screenshots", `${slugFromUrl(url)}-${todayISO()}`)
+    : "";
   const hasUserReferenceScreenshots =
     Array.isArray(referenceScreenshots) && referenceScreenshots.length > 0;
   const shouldCollectReferenceBenchmarks =
-    includeReferenceBenchmarks ||
-    (referenceSiteUrls && referenceSiteUrls.length > 0) ||
-    !hasUserReferenceScreenshots;
+    persistReports &&
+    (includeReferenceBenchmarks ||
+      (referenceSiteUrls && referenceSiteUrls.length > 0) ||
+      !hasUserReferenceScreenshots);
   const resolvedReferenceSites = shouldCollectReferenceBenchmarks
     ? resolveReferenceSites(referenceSiteUrls)
     : [];
