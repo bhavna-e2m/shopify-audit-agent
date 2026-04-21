@@ -271,3 +271,15 @@ export async function createGoogleDocFromMarkdown({ title, markdown }) {
     url: `https://docs.google.com/document/d/${docId}/edit`
   };
 }
+const isPublic = (process.env.GOOGLE_DOC_PUBLIC_ACCESS || "").toLowerCase() === "true";
+if (isPublic) {
+  const publicRole = (process.env.GOOGLE_DOC_PUBLIC_ROLE || "reader").toLowerCase();
+  await drive.permissions.create({
+    fileId: docId,
+    requestBody: {
+      type: "anyone",
+      role: publicRole === "writer" ? "writer" : "reader"
+    },
+    supportsAllDrives: true
+  });
+}
