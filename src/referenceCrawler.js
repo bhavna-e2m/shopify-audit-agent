@@ -10,10 +10,35 @@ function safeName(input) {
   return input.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
 }
 
-export async function collectReferenceScreenshots({ urls = [], outputDir }) {
+async function waitForVisualReady(page) {
+  try {
+    await page.waitForLoadState("networkidle", { timeout: 7000 });
+  } catch {
+    // Some sites keep long-polling connections; continue with fallback waits.
+  }
+
+  try {
+    await page.waitForFunction(
+      () => {
+        const imgs = Array.from(document.images || []);
+        const imagesReady = imgs.every((img) => img.complete);
+        const fontsReady = document.fonts ? document.fonts.status === "loaded" : true;
+        return imagesReady && fontsReady;
+      },
+      { timeout: 5000 }
+    );
+  } catch {
+    // If assets are slow, still proceed after a short grace wait.
+  }
+
+  await page.waitForTimeout(500);
+}
+
+export async function collectReferenceScreenshots({ urls = [], outputDir, limit = 2 }) {
+  const max = Number.isFinite(limit) && limit > 0 ? Math.min(Math.floor(limit), 6) : 2;
   const valid = [...new Set((urls || []).map((u) => String(u).trim()).filter(Boolean))].slice(
     0,
-    2
+    max
   );
   if (!valid.length) return [];
 
@@ -27,7 +52,8 @@ export async function collectReferenceScreenshots({ urls = [], outputDir }) {
   for (let i = 0; i < valid.length; i += 1) {
     const url = valid[i];
     try {
-      await page.goto(url, { waitUntil: "domcontentloaded", timeout: 12000 });
+      await page.goto(url, { waitUntil: "domcontentloaded", timeout: 10000 });
+      await waitForVisualReady(page);
       const html = await page.content();
       if (!looksLikeShopify(html)) continue;
 

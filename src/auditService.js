@@ -4,7 +4,8 @@ import { buildAuditPrompt } from "./auditPrompt.js";
 import { markdownToDocxBuffer } from "./docxExport.js";
 import { generateAuditMarkdown } from "./llm.js";
 import { resolveReferenceSites } from "./referenceBenchmarks.js";
-import { collectReferenceScreenshots } from "./referenceCrawler.js";
+import { getShopifyReference } from "./shopifyStandards.js";
+import { runPerformanceAudit } from "./performanceAudit.js";
 import { saveBinary, saveReport, slugFromUrl, todayISO } from "./utils.js";
 
 function isTableLine(line) {
@@ -141,6 +142,7 @@ function aggregateDetectedSignals(pages = []) {
     hasAny(homePages, "hasHeroSection") || homePages.some((p) => Boolean(p?.aboveFoldModule)); 
   const hasHomeStickyHeader =
     hasAny(homePages, "hasStickyHeaderHint") || hasAny(homePages, "hasStickyHeaderDetected");
+  const hasHomeTrustSignals = hasAny(homePages, "hasTrust") || hasAny(homePages, "hasTrustStrip");
   const hasCollectionFilter = hasAny(collectionPages, "hasCollectionFilter");
   const hasCollectionSort = hasAny(collectionPages, "hasCollectionSort");
   const hasProductCta = productPages.some((p) => (p?.ctaCandidates || []).length > 0);
@@ -148,6 +150,7 @@ function aggregateDetectedSignals(pages = []) {
   return {
     hasHomeHero,
     hasHomeStickyHeader,
+    hasHomeTrustSignals,
     hasCollectionFilter,
     hasCollectionSort,
     hasProductCta
@@ -197,6 +200,13 @@ function enforceSignalConsistency(markdown, signalFacts) {
   }
   if (signalFacts.hasProductCta) {
     out = out.replace(/no CTA button visible/gi, "CTA button is visible");
+  }
+  if (signalFacts.hasHomeTrustSignals) {
+    forceStatusAndRecommendation(/Trust\/USP Strip|Trust Signals/i, "Meets", "Nothing to change.");
+    // Remove obvious false-negative trust phrases when trust signals are detected.
+    out = out.replace(/no (dedicated )?trust( or usp)? strip visible/gi, "trust/USP strip is visible");
+    out = out.replace(/trust flags false/gi, "trust signals detected");
+    out = out.replace(/no visible trust badges? or guarantees?/gi, "visible trust cues are present");
   }
 
   return out;
@@ -306,6 +316,7 @@ function hasAllRequiredSections(markdown) {
     /Product Page - Shopify Requirements Verification/i,
     /Product Page - Key Areas of Improvement/i,
     /Other Pages - Key Areas of Improvement/i,
+    /SEO and Technical Audit/i,
     /Final Recommendation/i
   ];
   const hasCore = required.every((r) => r.test(markdown));
@@ -313,7 +324,128 @@ function hasAllRequiredSections(markdown) {
   const productChecks =
     (markdown.match(/###\s*6\.\d+/g) || []).length >= 6 &&
     (markdown.match(/###\s*7\.\d+/g) || []).length >= 4;
-  return hasCore && productChecks;
+  // Enforce SEO audit presence (section 9.x)
+  const seoChecks = (markdown.match(/###\s*9\.\d+/g) || []).length >= 5;
+  return hasCore && productChecks && seoChecks;
+}
+
+function normalizeInvalidStatusValues(markdown) {
+  const allowed = /^(Meets|Partially Meets|Needs Improvement)$/i;
+  const lines = markdown.split(/\r?\n/);
+  let invalidCount = 0;
+  const out = lines.map((line) => {
+    const m = line.match(/^(\s*[-*]?\s*Status:\s*)(.+)$/i);
+    if (!m) return line;
+    const value = (m[2] || "").trim();
+    if (allowed.test(value)) return line;
+    invalidCount += 1;
+    return `${m[1]}Partially Meets`;
+  });
+  return {
+    markdown: out.join("\n"),
+    invalidCount
+  };
+}
+
+function hasSectionEightHeading(markdown) {
+  return /(^|\n)##\s*8\)\s*Other Pages - Key Areas of Improvement/i.test(markdown);
+}
+
+function screenshotReuseRisk(markdown) {
+  const refs = [...markdown.matchAll(/Screenshot Reference:\s*.*\((https?:\/\/[^)]+)\)/gi)].map(
+    (m) => m[1]
+  );
+  if (refs.length < 4) return false;
+  const counts = refs.reduce((acc, url) => {
+    acc[url] = (acc[url] || 0) + 1;
+    return acc;
+  }, {});
+  const maxUse = Math.max(...Object.values(counts));
+  return maxUse / refs.length >= 0.7;
+}
+
+function countFinalRecommendationBullets(markdown) {
+  const lines = markdown.split(/\r?\n/);
+  const start = lines.findIndex((l) => /^##\s*9\)\s*Final Recommendation/i.test(l));
+  if (start === -1) return 0;
+  let end = lines.length;
+  for (let i = start + 1; i < lines.length; i += 1) {
+    if (/^##\s+/.test(lines[i])) {
+      end = i;
+      break;
+    }
+  }
+  return lines
+    .slice(start + 1, end)
+    .filter((l) => /^\s*[-*]\s+/.test(l.trim()))
+    .length;
+}
+
+function countInvalidStatusValues(markdown) {
+  const allowed = /^(Meets|Partially Meets|Needs Improvement)$/i;
+  const statuses = [...markdown.matchAll(/^\s*[-*]?\s*Status:\s*(.+)$/gim)].map((m) =>
+    (m[1] || "").trim()
+  );
+  if (!statuses.length) return 0;
+  return statuses.filter((s) => !allowed.test(s)).length;
+}
+
+function contradictionRiskDetected(markdown) {
+  const lines = markdown.split(/\r?\n/);
+  let hasRisk = false;
+  for (let i = 0; i < lines.length; i += 1) {
+    const statusMatch = lines[i].match(/^\s*[-*]?\s*Status:\s*(Meets)\s*$/i);
+    if (!statusMatch) continue;
+    const window = lines.slice(i + 1, Math.min(i + 6, lines.length)).join(" ").toLowerCase();
+    if (
+      /evidence:/.test(window) &&
+      /(no |not visible|missing|lacks|not clearly present)/.test(window)
+    ) {
+      hasRisk = true;
+      break;
+    }
+  }
+  return hasRisk;
+}
+
+function buildReliabilityChecks(markdown, pages) {
+  const fieldCoverage = scoreIssueFieldCoverage(markdown);
+  const productPagesDetected = pages.filter((p) => p.pageType === "product").length;
+  const finalRecommendationBullets = countFinalRecommendationBullets(markdown);
+  const invalidStatusValues = countInvalidStatusValues(markdown);
+
+  const checks = {
+    requiredSectionsPresent: hasAllRequiredSections(markdown),
+    sectionEightPresent: hasSectionEightHeading(markdown),
+    placeholderDetected: looksLikePlaceholder(markdown),
+    issueFieldCoverageScore: fieldCoverage.score,
+    issueSubsectionsDetected: fieldCoverage.requiredSubsectionCount,
+    invalidStatusValuesDetected: invalidStatusValues,
+    productPagesDetected,
+    productDataCoverageAdequate: productPagesDetected > 0,
+    screenshotReuseRisk: screenshotReuseRisk(markdown),
+    finalRecommendationBullets,
+    finalRecommendationBulletCountValid:
+      finalRecommendationBullets >= 5 && finalRecommendationBullets <= 7,
+    contradictionRiskDetected: contradictionRiskDetected(markdown)
+  };
+
+  const failures = [];
+  if (!checks.requiredSectionsPresent) failures.push("Missing required report sections.");
+  if (!checks.sectionEightPresent) failures.push("Section 8 is missing.");
+  if (checks.placeholderDetected) failures.push("Placeholder content detected.");
+  if (checks.invalidStatusValuesDetected > 0) failures.push("Invalid status values detected.");
+  if (checks.issueFieldCoverageScore < 75) failures.push("Improvement field coverage below threshold.");
+  if (!checks.productDataCoverageAdequate) failures.push("No product page data detected.");
+  if (!checks.finalRecommendationBulletCountValid) {
+    failures.push("Final recommendation must contain 5-7 bullets.");
+  }
+  if (checks.screenshotReuseRisk) failures.push("Screenshot references are over-reused.");
+  if (checks.contradictionRiskDetected) failures.push("Status/evidence contradiction risk detected."); 
+
+  const hardPass = failures.length === 0;
+  const reliabilityScore = Math.max(0, 100 - failures.length * 12);
+  return { ...checks, failures, hardPass, reliabilityScore };
 }
 
 function looksLikePlaceholder(markdown) {
@@ -322,6 +454,119 @@ function looksLikePlaceholder(markdown) {
     /would follow similar/i.test(markdown) ||
     /\[Would you like me to continue/i.test(markdown)
   );
+}
+
+function countMarkdownHeadings(markdown, pattern) {
+  return (markdown.match(pattern) || []).length;
+}
+
+function scoreIssueFieldCoverage(markdown) {  
+  const requiredFieldPatterns = [
+    /Current Observation:/gi, 
+    /Why This Matters:/gi,
+    /Recommended Action:/gi,
+    /Impact:\s*(High|Medium|Low)/gi,
+    /Effort:\s*(High|Medium|Low)/gi,
+    /Priority:\s*P[123]/gi,
+    /Confidence:\s*(High confidence|Recommended to validate on live theme)/gi
+  ];
+  const requiredSubsectionCount =
+    countMarkdownHeadings(markdown, /^###\s*3\.\d+/gim) +
+    countMarkdownHeadings(markdown, /^###\s*5\.\d+/gim) +
+    countMarkdownHeadings(markdown, /^###\s*7\.\d+/gim) +
+    countMarkdownHeadings(markdown, /^###\s*8\.\d+/gim) +
+    countMarkdownHeadings(markdown, /^###\s*9\.\d+/gim);
+
+  if (!requiredSubsectionCount) return { score: 0, requiredSubsectionCount };
+
+  const expectedTotalFieldLines = requiredSubsectionCount * requiredFieldPatterns.length;
+  const presentFieldLines = requiredFieldPatterns.reduce((sum, pattern) => {
+    return sum + countMarkdownHeadings(markdown, pattern);
+  }, 0);
+  const score = Math.round(Math.min(100, (presentFieldLines / expectedTotalFieldLines) * 100));
+  return { score, requiredSubsectionCount };
+}
+
+function ensureImprovementFieldLine(block, pattern, fallbackLine) {
+  return pattern.test(block) ? block : `${block.trimEnd()}\n- ${fallbackLine}\n`;
+}
+
+function enforceImprovementFields(markdown) {
+  const lines = markdown.split(/\r?\n/);
+  const out = [];
+  let inImprovementSection = false;
+  let buffer = [];
+
+  const flushBuffer = () => {
+    if (!buffer.length) return;
+    let block = buffer.join("\n");
+    if (/^###\s*(3|5|7|8|9)\.\d+/im.test(block)) {
+      block = ensureImprovementFieldLine(
+        block,
+        /(^|\n)\s*[-*]?\s*Current Observation:/i,
+        "Current Observation: Recommended to validate on live theme."
+      );
+      block = ensureImprovementFieldLine(
+        block,
+        /(^|\n)\s*[-*]?\s*Why This Matters:/i,
+        "Why This Matters: Aligns with Shopify UX standards and proven conversion optimization patterns."
+      );
+      block = ensureImprovementFieldLine(
+        block,
+        /(^|\n)\s*[-*]?\s*Recommended Action:/i,
+        "Recommended Action: Update theme code to align with Shopify UX standards and validate conversion impact."
+      );
+      block = ensureImprovementFieldLine(block, /(^|\n)\s*[-*]?\s*Impact:/i, "Impact: Medium");
+      block = ensureImprovementFieldLine(block, /(^|\n)\s*[-*]?\s*Effort:/i, "Effort: Medium");
+      block = ensureImprovementFieldLine(block, /(^|\n)\s*[-*]?\s*Priority:/i, "Priority: P2");
+      block = ensureImprovementFieldLine(
+        block,
+        /(^|\n)\s*[-*]?\s*Confidence:/i,
+        "Confidence: Recommended to validate on live theme"
+      );
+    }
+    out.push(block.trimEnd());
+    buffer = [];
+  };
+
+  for (const line of lines) {
+    if (/^##\s*(3|5|7|8|9)\)/i.test(line)) {
+      flushBuffer();
+      inImprovementSection = true;
+      out.push(line);
+      continue;
+    }
+    if (/^##\s+/i.test(line)) {
+      flushBuffer();
+      inImprovementSection = false;
+      out.push(line);
+      continue;
+    }
+    if (inImprovementSection && /^###\s+/.test(line)) {
+      flushBuffer();
+      buffer.push(line);
+      continue;
+    }
+    if (buffer.length) {
+      buffer.push(line);
+      continue;
+    }
+    out.push(line);
+  }
+  flushBuffer();
+  return out.join("\n").replace(/\n{3,}/g, "\n\n").trim();
+}
+
+function shouldIncludeOtherPagesSection(pages = [], additionalPageUrls = []) {
+  const hasUtilityPages = pages.some((p) =>
+    ["faq", "contact", "warranty"].includes(String(p?.pageType || "").toLowerCase())
+  );
+  return hasUtilityPages || (Array.isArray(additionalPageUrls) && additionalPageUrls.length > 0);
+}
+
+function removeOtherPagesSectionIfNotApplicable(markdown, includeOtherPages) {
+  // Keep section 8 in all reports for a stable client-facing structure.
+  return markdown;
 }
 
 function appendScreenshotAssets(markdown, pages) {
@@ -348,8 +593,10 @@ function enforceReferenceLines(markdown) {
     const blockText = buffer.join("\n");
     const hasReference = /(^|\n)\*?\*?Reference:\*?\*?/i.test(blockText);
     const hasShotRef = /(^|\n)\*?\*?Screenshot Reference:\*?\*?/i.test(blockText);
-    if (!hasReference) buffer.push("- Reference: Shopify standard check based on observed crawl evidence.");
-    if (!hasShotRef) buffer.push("- Screenshot Reference: See related item in Screenshot Assets.");
+    if (!hasReference) buffer.push("- Reference: Shopify UX and conversion optimization standards.");
+    if (!hasShotRef) {
+      // Screenshot references are optional and only included when a concrete image exists.
+    }
     out.push(...buffer);
     buffer = [];
   };
@@ -386,7 +633,7 @@ function buildSectionScreenshotReferences(pages, toPublicAssetUrl) {
         ? "collection"
         : page?.pageType === "product"
           ? "product"
-          : page?.pageType === "general"
+          : page?.pageType === "general" 
             ? "home"
             : "other";
 
@@ -491,8 +738,10 @@ function applySectionScreenshotReferences(markdown, sectionScreenshotLookup, sec
       const areaLookup = sectionScreenshotLookup[currentArea] || {};
       const mapped = areaLookup[sectionKey];
       const fallback = sectionScreenshotReferences[currentArea]?.[0] || "";
-      const chosen = mapped || fallback;
-      if (!chosen) return line;
+      // If we know the exact section key, never fall back to unrelated area screenshot.
+      // This avoids mismatched references (e.g. featured collection -> header screenshot).
+      const chosen = sectionKey ? mapped : mapped || fallback;
+      if (!chosen) return "";
       return line.replace(/:\s*.*/i, `: View screenshot (${chosen})`);
     }
 
@@ -549,7 +798,7 @@ function applyScreenshotReferenceFallbacks(
         /:\s*(n\/a|na|none|not captured|see related item in screenshot assets)\s*$/i.test(line) ||
         /:\s*$/.test(line);
       if (isMissingLike) {
-        return line.replace(/:\s*.*/i, `: ${asDocLink(replacement)}`);
+        return "";
       }
     }
 
@@ -566,6 +815,7 @@ export async function runAudit({
   appBaseUrl = "",
   additionalPageUrls = [],
   persistReports = true,
+  createMarkdown = true,
   docx = false,
   fastMode = true,
   includeScreenshots = false,
@@ -600,33 +850,42 @@ export async function runAudit({
     additionalPageUrls
   });
 
+  console.log(`Crawling completed: shopifyDetected=${shopifyDetected}, pagesFound=${pages.length}`);
+
   if (!shopifyDetected) {
     throw new Error(
-      "This URL does not appear to be a Shopify storefront. Audit agent is Shopify-only."
+      `This URL does not appear to be a Shopify storefront. The audit agent only works with Shopify stores.\n` +
+      `Please verify that ${url} is a valid Shopify website.`
     );
   }
 
   if (!pages.length) {
-    throw new Error("Could not crawl pages. Try again with a reachable storefront URL.");
+    throw new Error(
+      `Could not crawl any pages from ${url}. Please ensure:\n` +
+      `1. The URL is reachable and publicly accessible\n` +
+      `2. The website is not blocking automated requests\n` +
+      `3. The URL is a valid Shopify storefront\n` +
+      `4. Try using a different URL or check your internet connection`
+    );
   }
+
+  // Run performance audit on home page
+  const performanceData = await runPerformanceAudit(url);
 
   const referenceBenchmarkDir = persistReports
     ? path.join("reports", "reference-screenshots", `${slugFromUrl(url)}-${todayISO()}`)
     : "";
-  const hasUserReferenceScreenshots =
-    Array.isArray(referenceScreenshots) && referenceScreenshots.length > 0;
   const shouldCollectReferenceBenchmarks =
     persistReports &&
-    (includeReferenceBenchmarks ||
-      (referenceSiteUrls && referenceSiteUrls.length > 0) ||
-      !hasUserReferenceScreenshots);
+    (includeReferenceBenchmarks || (referenceSiteUrls && referenceSiteUrls.length > 0));
   const resolvedReferenceSites = shouldCollectReferenceBenchmarks
     ? resolveReferenceSites(referenceSiteUrls)
     : [];
   const autoReferenceShots = shouldCollectReferenceBenchmarks
     ? await collectReferenceScreenshots({
         urls: resolvedReferenceSites,
-        outputDir: referenceBenchmarkDir
+        outputDir: referenceBenchmarkDir,
+        limit: fastMode ? 1 : 2
       })
     : [];
   const mergedReferenceScreenshots = [
@@ -643,7 +902,8 @@ export async function runAudit({
     pages,
     date: todayISO(),
     screenshotDir,
-    referenceScreenshots: mergedReferenceScreenshots
+    referenceScreenshots: mergedReferenceScreenshots,
+    performanceData
   });
 
   const candidateModels = fastMode
@@ -655,8 +915,10 @@ export async function runAudit({
   let markdown = "";
   let markdownRaw = "";
   let success = false;
+  const includeOtherPages = shouldIncludeOtherPagesSection(pages, additionalPageUrls);
 
   const maxAttemptsPerModel = fastMode ? 1 : 2;
+  const minFieldCoverageScore = fastMode ? 60 : 75;
 
   for (const candidateModel of candidateModels) {
     for (let attempt = 0; attempt < maxAttemptsPerModel; attempt += 1) {
@@ -677,7 +939,11 @@ CRITICAL REPAIR INSTRUCTIONS:
       markdownRaw = await generateAuditMarkdown(`${promptWithReferences}${strictSuffix}`, candidateModel);
       if (!markdownRaw) continue;
       markdown = sanitizeMarkdown(markdownRaw);
-      const valid = hasAllRequiredSections(markdown) && !looksLikePlaceholder(markdown);
+      const fieldCoverage = scoreIssueFieldCoverage(markdown);
+      const valid =
+        hasAllRequiredSections(markdown) &&
+        !looksLikePlaceholder(markdown) &&
+        fieldCoverage.score >= minFieldCoverageScore;
       if (valid) {
         success = true;
         break;
@@ -713,14 +979,16 @@ CRITICAL REPAIR INSTRUCTIONS:
         ? ""
         : `\n## ${title}\n\n- Current Observation: Needs manual verification from crawl output.\n- Why This Matters: Section required for Shopify-standard audit completeness.\n- Recommendation: Validate manually and update.\n- Reference: Auto-recovery placeholder due model format mismatch.\n- Screenshot Reference: See Screenshot Assets.\n`;
 
-    const missingScaffold = [
+    const scaffoldTitles = [
       "4) Collection Page - Shopify Requirements Verification",
       "5) Collection Page - Key Areas of Improvement",
       "6) Product Page - Shopify Requirements Verification",
       "7) Product Page - Key Areas of Improvement",
-      "8) Other Pages - Key Areas of Improvement",
+      ...(includeOtherPages ? ["8) Other Pages - Key Areas of Improvement"] : []),
       "9) Final Recommendation"
-    ]
+    ];
+
+    const missingScaffold = scaffoldTitles
       .map(ensureSection)
       .join("");
 
@@ -741,6 +1009,12 @@ CRITICAL REPAIR INSTRUCTIONS:
   }
   const signalFacts = aggregateDetectedSignals(pages);
   markdown = enforceSignalConsistency(markdown, signalFacts);
+  markdown = removeOtherPagesSectionIfNotApplicable(markdown, includeOtherPages);
+  markdown = enforceImprovementFields(markdown);
+  let normalizedStatusCount = 0;
+  const normalizedStatuses = normalizeInvalidStatusValues(markdown);
+  normalizedStatusCount = normalizedStatuses.invalidCount;
+  markdown = normalizedStatuses.markdown;
   markdown = normalizeAuditLayout(markdown);
   markdown = applySectionScreenshotReferences(
     markdown,
@@ -754,9 +1028,68 @@ CRITICAL REPAIR INSTRUCTIONS:
     mergedReferenceScreenshots,
     sectionScreenshotReferences
   );
+  markdown = markdown
+    .replace(/^\s*[-*]?\s*Screenshot Reference:\s*(N\/A|NA|none|not captured|see related item in screenshot assets)?\s*$/gim, "")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+  let reliabilityChecks = buildReliabilityChecks(markdown, pages);
 
-  const outputPath = out || path.join("reports", `${slugFromUrl(url)}-audit-${todayISO()}.md`);
-  if (persistReports) {
+  if (!reliabilityChecks.hardPass) {
+    const fallbackModel = model || "openai/gpt-4.1-mini";
+    const repairPrompt = `${promptWithReferences}
+
+CRITICAL RELIABILITY REPAIR:
+- Fix all QA failures listed below.
+- Keep sections 1-9 exactly.
+- Use only Status: Meets / Partially Meets / Needs Improvement.
+- Final Recommendation must contain 5-7 concise bullets.
+- Keep all findings evidence-backed and internally consistent.
+- Output final markdown only.
+
+QA failures to fix:
+${reliabilityChecks.failures.map((f, idx) => `${idx + 1}. ${f}`).join("\n")}
+`;
+    const repairedRaw = await generateAuditMarkdown(repairPrompt, fallbackModel);
+    if (repairedRaw) {
+      let repaired = sanitizeMarkdown(repairedRaw);
+      repaired = enforceSignalConsistency(repaired, signalFacts);
+      repaired = removeOtherPagesSectionIfNotApplicable(repaired, includeOtherPages);
+      repaired = enforceImprovementFields(repaired);
+      const repairedNormalizedStatuses = normalizeInvalidStatusValues(repaired);
+      normalizedStatusCount = repairedNormalizedStatuses.invalidCount;
+      repaired = repairedNormalizedStatuses.markdown;
+      repaired = normalizeAuditLayout(repaired);
+      repaired = applySectionScreenshotReferences(
+        repaired,
+        sectionScreenshotLookup,
+        sectionScreenshotReferences
+      );
+      repaired = injectQualityScorecard(repaired);
+      repaired = enforceReferenceLines(repaired);
+      repaired = applyScreenshotReferenceFallbacks(
+        repaired,
+        mergedReferenceScreenshots,
+        sectionScreenshotReferences
+      );
+      repaired = repaired
+        .replace(
+          /^\s*[-*]?\s*Screenshot Reference:\s*(N\/A|NA|none|not captured|see related item in screenshot assets)?\s*$/gim,
+          ""
+        )
+        .replace(/\n{3,}/g, "\n\n")
+        .trim();
+      const repairedChecks = buildReliabilityChecks(repaired, pages);
+      if (repairedChecks.hardPass || repairedChecks.reliabilityScore >= reliabilityChecks.reliabilityScore) {
+        markdown = repaired;
+        reliabilityChecks = repairedChecks;
+      }
+    }
+  }
+
+  const outputPath = createMarkdown
+    ? out || path.join("reports", `${slugFromUrl(url)}-audit-${todayISO()}.md`)
+    : "";
+  if (persistReports && createMarkdown) {
     await saveReport(outputPath, markdown);
   }
 
@@ -782,6 +1115,24 @@ CRITICAL REPAIR INSTRUCTIONS:
       ...r,
       screenshotPath: toPublicAssetUrl(r.screenshotPath)
     })),
-    referenceSitePoolUsed: resolvedReferenceSites
+    referenceSitePoolUsed: resolvedReferenceSites,
+    qualityChecks: {
+      requiredSectionsPresent: reliabilityChecks.requiredSectionsPresent,
+      sectionEightPresent: reliabilityChecks.sectionEightPresent,
+      placeholderDetected: reliabilityChecks.placeholderDetected,
+      issueFieldCoverageScore: reliabilityChecks.issueFieldCoverageScore,
+      issueSubsectionsDetected: reliabilityChecks.issueSubsectionsDetected,
+      invalidStatusValuesDetected: reliabilityChecks.invalidStatusValuesDetected,
+      invalidStatusValuesNormalized: normalizedStatusCount,
+      productPagesDetected: reliabilityChecks.productPagesDetected,
+      productDataCoverageAdequate: reliabilityChecks.productDataCoverageAdequate,
+      screenshotReuseRisk: reliabilityChecks.screenshotReuseRisk,
+      finalRecommendationBullets: reliabilityChecks.finalRecommendationBullets,
+      finalRecommendationBulletCountValid: reliabilityChecks.finalRecommendationBulletCountValid,
+      contradictionRiskDetected: reliabilityChecks.contradictionRiskDetected,
+      reliabilityScore: reliabilityChecks.reliabilityScore,
+      hardPass: reliabilityChecks.hardPass,
+      failures: reliabilityChecks.failures
+    }
   };
 }

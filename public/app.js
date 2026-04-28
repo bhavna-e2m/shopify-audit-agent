@@ -32,7 +32,7 @@ async function parseApiResponse(response) {
   const raw = await response.text();
   const snippet = raw.slice(0, 120).replace(/\s+/g, " ");
   throw new Error(
-    `Server returned non-JSON response (${response.status}). Please open the latest app URL and retry. Response starts with: ${snippet}`
+    `Server returned non-JSON response (${response.status}). Please open the latest app URL and retry. Response starts with: ${snippet}` 
   );
 }
 
@@ -107,12 +107,9 @@ form.addEventListener("submit", async (event) => {
   const stopProgress = startScanProgress();
 
   const url = document.getElementById("url").value.trim();
+  const createMarkdown = document.getElementById("createMarkdown").checked;
   const createGoogleDoc = document.getElementById("createGoogleDoc").checked;
   const fastMode = document.getElementById("fastMode").checked;
-  const includeScreenshots = document.getElementById("includeScreenshots").checked;
-  const includeReferenceBenchmarks = document.getElementById(
-    "includeReferenceBenchmarks"
-  ).checked;
   const referenceSiteUrls = document
     .getElementById("referenceSiteUrls")
     .value.split("\n")
@@ -131,10 +128,9 @@ form.addEventListener("submit", async (event) => {
       body: JSON.stringify({
         url,
         appBaseUrl: window.location.origin,
+        createMarkdown,
         createGoogleDoc,
         fastMode,
-        includeScreenshots,
-        includeReferenceBenchmarks,
         referenceSiteUrls,
         additionalPageUrls
       })
@@ -153,9 +149,13 @@ form.addEventListener("submit", async (event) => {
     resultBox.innerHTML = `
       <div><strong>Store:</strong> ${data.url}</div>
       <div><strong>Pages analyzed:</strong> ${data.pagesAnalyzed}</div>
-      <div><strong>Format:</strong> Markdown (.md)</div>
-      <div><strong>Mode:</strong> ${fastMode ? "Fast" : "Detailed"}${includeScreenshots ? " + Site Screenshots" : ""}${includeReferenceBenchmarks ? " + Benchmark References" : ""}</div>
-      <a class="download" href="${markdownHref}" download>Download Markdown</a>
+      <div><strong>Format:</strong> ${createMarkdown ? "Markdown (.md)" : "Google Doc only"}</div>
+      <div><strong>Mode:</strong> ${fastMode ? "Fast" : "Detailed"}</div>
+      ${
+        createMarkdown
+          ? `<a class="download" href="${markdownHref}" download>Download Markdown</a>`
+          : ""
+      }
       ${
         data.googleDocUrl
           ? `<div style="margin-top:10px;padding:10px;border:1px solid #dfcdb9;border-radius:10px;background:#fff8ef;">
@@ -170,16 +170,6 @@ form.addEventListener("submit", async (event) => {
           : ""
       }
       ${
-        Array.isArray(data.screenshots) && data.screenshots.length
-          ? `<div style="margin-top:10px;"><strong>Screenshots:</strong><br/>${data.screenshots
-              .map(
-                (s, i) =>
-                  `<a class="download" href="${s}" target="_blank" rel="noopener noreferrer">View Screenshot ${i + 1}</a>`
-              )
-              .join("")}</div>`
-          : ""
-      }
-      ${
         Array.isArray(data.referenceBenchmarks) && data.referenceBenchmarks.length
           ? `<div style="margin-top:10px;"><strong>Reference Benchmark Screenshots:</strong><br/>${data.referenceBenchmarks
               .map(
@@ -191,7 +181,7 @@ form.addEventListener("submit", async (event) => {
       }
       ${
         Array.isArray(data.referenceSitePoolUsed) && data.referenceSitePoolUsed.length
-          ? `<div style="margin-top:10px;color:#64748b;"><strong>Reference Sites Used:</strong> ${data.referenceSitePoolUsed.join(", ")}</div>`
+          ? `<div style="margin-top:10px;color:#64748b;"><strong>Reference Sites Used:</strong> ${data.referenceSitePoolUsed.join(", ")}</div>`  
           : ""
       }
     `;

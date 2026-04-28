@@ -149,16 +149,17 @@ function normalizePrivateKey(privateKeyRaw) {
   return key;
 }
 
-function getGoogleAuth() {
+function getOAuthAuth() {
   const oauthClientId = (process.env.GOOGLE_OAUTH_CLIENT_ID || "").trim();
   const oauthClientSecret = (process.env.GOOGLE_OAUTH_CLIENT_SECRET || "").trim();
   const oauthRefreshToken = (process.env.GOOGLE_OAUTH_REFRESH_TOKEN || "").trim();
-  if (oauthClientId && oauthClientSecret && oauthRefreshToken) {
-    const oauth2Client = new google.auth.OAuth2(oauthClientId, oauthClientSecret);
-    oauth2Client.setCredentials({ refresh_token: oauthRefreshToken });
-    return { auth: oauth2Client, mode: "oauth_user" };
-  }
+  if (!oauthClientId || !oauthClientSecret || !oauthRefreshToken) return null;
+  const oauth2Client = new google.auth.OAuth2(oauthClientId, oauthClientSecret);
+  oauth2Client.setCredentials({ refresh_token: oauthRefreshToken });
+  return { auth: oauth2Client, mode: "oauth_user" };
+}
 
+function getServiceAccountAuth() {
   const clientEmail = (process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL || "").trim();
   const privateKeyRaw = process.env.GOOGLE_PRIVATE_KEY;
   if (!clientEmail || !privateKeyRaw) return null;
@@ -177,6 +178,16 @@ function getGoogleAuth() {
   };
 }
 
+function getGoogleAuthContexts() {
+  const oauthAuth = getOAuthAuth();
+  const serviceAuth = getServiceAccountAuth();
+  // If OAuth user credentials are configured, force OAuth-only mode.
+  // This avoids unexpected fallback to service account credentials
+  // (which can fail with storageQuotaExceeded).
+  if (oauthAuth) return [oauthAuth];
+  return [serviceAuth].filter(Boolean);
+}
+
 function buildGoogleSetupHint(authMode) {
   if (authMode === "oauth_user") {
     return "Google OAuth token lacks permission for this folder/project. Reconnect OAuth credentials or choose a folder your Google account can edit.";
@@ -193,94 +204,127 @@ function buildNotConfiguredMessage() {
   );
 }
 
+function getGoogleErrorReason(error) {
+  return (
+    error?.response?.data?.error?.errors?.[0]?.reason ||
+    error?.response?.data?.error?.status ||
+    error?.response?.data?.error ||
+    ""
+  );
+}
+
+function isInvalidGrantError(error) {
+  const reason = String(getGoogleErrorReason(error) || "").toLowerCase();
+  const message = String(error?.message || "").toLowerCase();
+  return reason.includes("invalid_grant") || message.includes("invalid_grant");
+}
+
 export async function createGoogleDocFromMarkdown({ title, markdown }) {
-  const authContext = getGoogleAuth();
-  if (!authContext) {
+  const authContexts = getGoogleAuthContexts();
+  if (!authContexts.length) {
     return { enabled: false, reason: buildNotConfiguredMessage() };
   }
-  const { auth, mode } = authContext;
+  let lastError = null;
+  for (const authContext of authContexts) {
+    const { auth, mode } = authContext;
+    const docs = google.docs({ version: "v1", auth });
+    const drive = google.drive({ version: "v3", auth });
+    const folderId = (process.env.GOOGLE_DRIVE_FOLDER_ID || "").trim();
 
-  const docs = google.docs({ version: "v1", auth });
-  const drive = google.drive({ version: "v3", auth });
-  const folderId = (process.env.GOOGLE_DRIVE_FOLDER_ID || "").trim();
-
-  let docId = "";
-  try {
-    // Prefer Drive creation because it allows targeting a shared folder directly.
-    const createRes = await drive.files.create({
-      requestBody: {
-        name: title,
-        mimeType: "application/vnd.google-apps.document",
-        ...(folderId
-          ? { parents: [folderId] }
-          : {})
-      },
-      fields: "id, webViewLink",
-      supportsAllDrives: true
-    });
-    docId = createRes.data.id || "";
-  } catch (error) {
-    const status = error?.response?.status;
-    const reason = error?.response?.data?.error?.errors?.[0]?.reason; 
-    if (reason === "storageQuotaExceeded" && mode === "service_account") {
-      throw new Error(
-        "Google blocked file creation for this service account (no storage quota). Configure OAuth user auth in .env (GOOGLE_OAUTH_CLIENT_ID, GOOGLE_OAUTH_CLIENT_SECRET, GOOGLE_OAUTH_REFRESH_TOKEN), or use a Shared Drive."
-      );
-    }
-    if (status === 403) {
-      throw new Error(`Google permission denied (403). ${buildGoogleSetupHint(mode)}`);
-    }
-    throw error;
-  }
-
-  if (!docId) throw new Error("Failed to create Google Doc.");
-
-  const { text, requests } = buildDocRequestsFromMarkdown(markdown);
-  await docs.documents.batchUpdate({
-    documentId: docId,
-    requestBody: {
-      requests: [
-        {
-          insertText: {
-            location: { index: 1 },
-            text
-          }
+    let docId = "";
+    try {
+      // Prefer Drive creation because it allows targeting a shared folder directly.
+      const createRes = await drive.files.create({
+        requestBody: {
+          name: title,
+          mimeType: "application/vnd.google-apps.document",
+          ...(folderId
+            ? { parents: [folderId] }
+            : {})
         },
-        ...requests
-      ]
+        fields: "id, webViewLink",
+        supportsAllDrives: true
+      });
+      docId = createRes.data.id || "";
+      if (!docId) throw new Error("Failed to create Google Doc.");
+
+      const { text, requests } = buildDocRequestsFromMarkdown(markdown);
+      await docs.documents.batchUpdate({
+        documentId: docId,
+        requestBody: {
+          requests: [
+            {
+              insertText: {
+                location: { index: 1 },
+                text
+              }
+            },
+            ...requests
+          ]
+        }
+      });
+
+      const shareWithEmail = (process.env.GOOGLE_SHARE_WITH_EMAIL || "").trim();
+      if (shareWithEmail) {
+        await drive.permissions.create({
+          fileId: docId,
+          requestBody: {
+            type: "user",
+            role: "writer",
+            emailAddress: shareWithEmail
+          },
+          sendNotificationEmail: false, 
+          supportsAllDrives: true
+        });
+      }
+
+      const isPublic = (process.env.GOOGLE_DOC_PUBLIC_ACCESS || "").toLowerCase() === "true";
+      if (isPublic) {
+        const publicRole = (process.env.GOOGLE_DOC_PUBLIC_ROLE || "reader").toLowerCase();
+        await drive.permissions.create({
+          fileId: docId,
+          requestBody: {
+            type: "anyone",
+            role: publicRole === "writer" ? "writer" : "reader"
+          },
+          supportsAllDrives: true
+        });
+      }
+
+      return {
+        enabled: true,
+        docId, 
+        url: `https://docs.google.com/document/d/${docId}/edit`
+      };
+    } catch (error) {
+      const status = error?.response?.status;
+      const reason = error?.response?.data?.error?.errors?.[0]?.reason;
+      const hasAnotherAuthOption = authContexts.length > 1 && authContext !== authContexts[authContexts.length - 1];
+
+      if (mode === "oauth_user" && isInvalidGrantError(error) && hasAnotherAuthOption) {
+        lastError = new Error(
+          "Google OAuth refresh token expired or revoked (invalid_grant). Falling back to service-account credentials."
+        );
+        continue;
+      }
+      if (reason === "storageQuotaExceeded" && mode === "service_account") {
+        lastError = new Error(
+          "Google blocked file creation for this service account (no storage quota). Configure OAuth user auth in .env (GOOGLE_OAUTH_CLIENT_ID, GOOGLE_OAUTH_CLIENT_SECRET, GOOGLE_OAUTH_REFRESH_TOKEN), or use a Shared Drive."
+        );
+        continue;
+      }
+      if (status === 403) {
+        lastError = new Error(`Google permission denied (403). ${buildGoogleSetupHint(mode)}`);
+        continue;
+      }
+      if (mode === "oauth_user" && isInvalidGrantError(error)) {
+        lastError = new Error(
+          "Google OAuth refresh token expired or revoked (invalid_grant). Reconnect Google OAuth and update GOOGLE_OAUTH_REFRESH_TOKEN in .env."
+        );
+        continue;
+      }
+      lastError = error;
     }
-  });
-
-  const shareWithEmail = (process.env.GOOGLE_SHARE_WITH_EMAIL || "").trim();
-  if (shareWithEmail) {
-    await drive.permissions.create({
-      fileId: docId,
-      requestBody: {
-        type: "user",
-        role: "writer",
-        emailAddress: shareWithEmail
-      },
-      sendNotificationEmail: false,
-      supportsAllDrives: true
-    });
   }
-
-  const isPublic = (process.env.GOOGLE_DOC_PUBLIC_ACCESS || "").toLowerCase() === "true";
-  if (isPublic) {
-    const publicRole = (process.env.GOOGLE_DOC_PUBLIC_ROLE || "reader").toLowerCase();
-    await drive.permissions.create({
-      fileId: docId,
-      requestBody: {
-        type: "anyone",
-        role: publicRole === "writer" ? "writer" : "reader"
-      },
-      supportsAllDrives: true
-    });
-  }
-
-  return {
-    enabled: true,
-    docId, 
-    url: `https://docs.google.com/document/d/${docId}/edit`
-  };
+  throw lastError || new Error("Google Doc creation failed.");
 } 

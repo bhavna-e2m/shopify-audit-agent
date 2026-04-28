@@ -106,7 +106,15 @@ function extractSignals(url, html, runtimeHints = {}) {
 
   const hasReviews = /review|star|rated/i.test(text);
   const hasUgc = /instagram|customer photo|testimonial|ugc/i.test(text);
-  const hasTrust = /warranty|secure|rfid|guarantee|free shipping|returns/i.test(text);
+  const hasTrustStripBySelector =
+    $(
+      "[class*='trust'], [id*='trust'], [class*='usp'], [id*='usp'], [class*='why-choose'], [id*='why-choose'], [class*='trusted'], [id*='trusted'], [class*='guarantee'], [id*='guarantee']"
+    ).length > 0;
+  const hasTrustByCopy =
+    /warranty|secure|rfid|guarantee|free shipping|returns|trusted by|why choose us|years in business|design expertise|woman-owned/i.test(
+      text
+    );
+  const hasTrust = hasTrustStripBySelector || hasTrustByCopy;
   const hasStickyHeaderClassHint = /sticky/i.test($("header").attr("class") || "");
   const hasStickyHeaderCssHint = /position\s*:\s*(sticky|fixed)/i.test(html);
   const hasStickyHeaderHint = Boolean(
@@ -125,7 +133,29 @@ function extractSignals(url, html, runtimeHints = {}) {
       /filter by|sort by|facet|facets/i.test(text));
   const hasCollectionSort =
     /\/collections\//i.test(url) &&
-    ($("select[name*='sort'], [class*='sort']").length > 0 || /sort by/i.test(text)); 
+    ($("select[name*='sort'], [class*='sort']").length > 0 || /sort by/i.test(text));
+  // Enhanced SEO and accessibility signals
+  const metaTitle = cleanText($("title").text());
+  const metaDescription = cleanText($("meta[name='description']").attr("content") || "");
+  const hasMetaTitle = metaTitle.length > 0;
+  const hasMetaDescription = metaDescription.length > 0;
+  const hasCanonical = Boolean($("link[rel='canonical']").length);
+  const hasOpenGraph = Boolean($("meta[property^='og:']").length);
+  const hasTwitterCard = Boolean($("meta[name^='twitter:']").length);
+  const hasStructuredData = Boolean($("script[type='application/ld+json']").length);
+  const hasAltText = $("img[alt]").length > 0 && $("img:not([alt])").length === 0;
+  const hasH1 = $("h1").length > 0;
+  const hasMultipleH1 = $("h1").length > 1;
+  const hasLangAttr = Boolean($("html").attr("lang"));
+  const hasAriaLabels = $("[aria-label], [aria-labelledby]").length > 0;
+  const hasFocusIndicators = /:focus/i.test(html);
+  const hasColorContrastIssues = /color:\s*#(?:[0-9a-f]{3}){1,2}/gi.test(html); // Basic check, not comprehensive
+
+  // Performance hints (basic)
+  const hasLazyLoading = $("[loading='lazy']").length > 0;
+  const imageCount = $("img").length;
+  const scriptCount = $("script").length;
+  const cssCount = $("link[rel='stylesheet']").length;
 
   const links = $("a[href]")
     .map((_, a) => $(a).attr("href"))
@@ -145,6 +175,7 @@ function extractSignals(url, html, runtimeHints = {}) {
       hasReviews,
       hasUgc,
       hasTrust,
+      hasTrustStrip: hasTrustStripBySelector,
       hasStickyHeaderHint,
       hasWishlist,
       hasLiveChat,
@@ -152,12 +183,32 @@ function extractSignals(url, html, runtimeHints = {}) {
       hasHeroSection,
       hasCollectionFilter,
       hasCollectionSort,
-      hasStickyHeaderDetected: Boolean(runtimeHints.hasStickyHeaderDetected)
+      hasStickyHeaderDetected: Boolean(runtimeHints.hasStickyHeaderDetected),
+      // New SEO flags
+      hasMetaTitle,
+      hasMetaDescription,
+      hasCanonical,
+      hasOpenGraph,
+      hasTwitterCard,
+      hasStructuredData,
+      hasAltText,
+      hasH1,
+      hasMultipleH1,
+      hasLangAttr,
+      hasAriaLabels,
+      hasFocusIndicators,
+      hasColorContrastIssues,
+      // Performance flags
+      hasLazyLoading,
+      imageCount,
+      scriptCount,
+      cssCount
     },
     textSnippet: text,
     aboveFoldModule,
     aboveFoldScreenshotPath: "",
-    links
+    links,
+    metaDescription
   };
 }
 
@@ -204,7 +255,7 @@ function shouldQueueLink(startUrl, link) {
 }
 
 function detectShopifyFromHtml(html) {
-  return /shopify|cdn\.shopify\.com|\/cdn\/shop\/|Shopify\.theme/i.test(html);
+  return /shopify|cdn\.shopify\.com|\/cdn\/shop\/|Shopify\.theme/i.test(html); 
 }
 
 function safeName(input) {
@@ -252,7 +303,8 @@ async function saveSectionScreenshotsIfEnabled(page, signal, index, screenshotDi
       header: "header",
       hero: "section[class*='hero'], section[class*='banner'], .hero, .banner, [data-section-type*='slideshow']",
       trust: "[class*='trust'], [id*='trust'], [class*='usp'], [id*='usp']",
-      featured: "section[class*='featured'], [id*='featured'], [class*='best-seller'], [id*='best-seller']",
+      featured:
+        "section[class*='featured'], [id*='featured'], [class*='best-seller'], [id*='best-seller'], section[class*='collection'], [id*='collection'], [class*='shop-by'], [id*='shop-by'], [class*='category'], [id*='category']",
       footer: "footer"
     },
     collection: {
@@ -301,10 +353,14 @@ async function crawlStoreWithFetch(startUrl, maxPages, initialQueue = [startUrl]
   const pages = [];
   let shopifyDetected = false;
 
+  console.log(`Starting fetch-based crawl for: ${startUrl}`);
+
   while (queue.length && pages.length < maxPages) {
     const next = queue.shift();
     if (!next || visited.has(next)) continue;
     visited.add(next);
+
+    console.log(`Fetching: ${next}`);
 
     try {
       const res = await fetch(next, {
@@ -313,9 +369,18 @@ async function crawlStoreWithFetch(startUrl, maxPages, initialQueue = [startUrl]
             "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36"
         }
       });
+      
+      if (!res.ok) {
+        console.log(`HTTP ${res.status} for: ${next}`);
+        continue;
+      }
+      
       const html = await res.text();
 
-      if (detectShopifyFromHtml(html)) shopifyDetected = true;
+      if (detectShopifyFromHtml(html)) {
+        shopifyDetected = true;
+        console.log(`Shopify store detected at: ${next}`);
+      }
 
       const signal = extractSignals(next, html);
       signal.screenshotPath = "";
@@ -323,11 +388,60 @@ async function crawlStoreWithFetch(startUrl, maxPages, initialQueue = [startUrl]
       signal.sectionScreenshots = {};
       pages.push(signal);
 
+      console.log(`Successfully fetched: ${next} (${signal.pageType})`);
+
       for (const link of signal.links) {
         if (shouldQueueLink(startUrl, link) && !visited.has(link)) queue.push(link);
       }
-    } catch {
+    } catch (error) {
+      console.log(`Failed to fetch: ${next} - ${error.message}`);
       // Skip failing pages and continue crawl.
+    }
+  }
+
+  console.log(`Fetch crawl completed: ${pages.length} pages, shopifyDetected: ${shopifyDetected}`);
+  
+  // In fetch mode, run a lightweight Playwright pass only for section screenshots,
+  // so screenshot references can still match specific audited sections.
+  if (process.env.AUDIT_SECTION_SCREENSHOT_DIR) {
+    try {
+      const browser = await chromium.launch({ headless: true });
+      const context = await browser.newContext();
+      const page = await context.newPage();
+
+      const picked = [];
+      const addFirstOfType = (type) => {
+        const item = pages.find((p) => p.pageType === type);
+        if (item && !picked.includes(item)) picked.push(item);
+      };
+      addFirstOfType("general");
+      addFirstOfType("collection");
+      addFirstOfType("product");
+
+      for (let i = 0; i < picked.length; i += 1) {
+        const signal = picked[i];
+        try {
+          await page.goto(signal.url, { waitUntil: "domcontentloaded", timeout: 12000 });
+          signal.aboveFoldScreenshotPath = await saveAboveFoldScreenshotIfEnabled(
+            page,
+            signal,
+            i,
+            process.env.AUDIT_SECTION_SCREENSHOT_DIR
+          );
+          signal.sectionScreenshots = await saveSectionScreenshotsIfEnabled(
+            page,
+            signal,
+            i,
+            process.env.AUDIT_SECTION_SCREENSHOT_DIR
+          );
+        } catch {
+          // Ignore individual page capture errors in fallback pass.
+        }
+      }
+
+      await browser.close();
+    } catch {
+      // If lightweight screenshot pass fails, keep fetch-only text audit results.
     }
   }
 
@@ -338,6 +452,9 @@ export async function crawlStore(startUrl, maxPages = 8, options = {}) {
   const additionalPageUrls = Array.isArray(options.additionalPageUrls)
     ? options.additionalPageUrls.filter(Boolean)
     : [];
+
+  console.log(`Starting crawl for: ${startUrl}`);
+  console.log(`Additional URLs: ${additionalPageUrls.length}`);
 
   if (process.env.AUDIT_USE_FETCH_ONLY === "1") {
     const queue = [startUrl, ...additionalPageUrls];
@@ -355,16 +472,23 @@ export async function crawlStore(startUrl, maxPages = 8, options = {}) {
     const pages = [];
     let shopifyDetected = false;
 
+    console.log(`Queue length: ${queue.length}, maxPages: ${maxPages}`);
+
     while (queue.length && pages.length < maxPages) {
       const next = queue.shift();
       if (!next || visited.has(next)) continue;
       visited.add(next);
 
+      console.log(`Crawling: ${next}`);
+
       try {
-        await page.goto(next, { waitUntil: "domcontentloaded", timeout: 30000 });
+        await page.goto(next, { waitUntil: "domcontentloaded", timeout: 15000 });
         const html = await page.content();
 
-        if (detectShopifyFromHtml(html)) shopifyDetected = true;
+        if (detectShopifyFromHtml(html)) {
+          shopifyDetected = true;
+          console.log(`Shopify store detected at: ${next}`);
+        }
 
         const runtimeHints = await detectRuntimeHints(page);
         const signal = extractSignals(next, html, runtimeHints);
@@ -388,17 +512,22 @@ export async function crawlStore(startUrl, maxPages = 8, options = {}) {
         );
         pages.push(signal);
 
+        console.log(`Successfully crawled: ${next} (${signal.pageType})`);
+
         for (const link of signal.links) {
           if (shouldQueueLink(startUrl, link) && !visited.has(link)) queue.push(link);
         }
-      } catch {
+      } catch (error) {
+        console.log(`Failed to crawl: ${next} - ${error.message}`);
         // Skip failing pages and continue crawl.
       }
     }
 
     await browser.close();
+    console.log(`Crawl completed: ${pages.length} pages, shopifyDetected: ${shopifyDetected}`);
     return { shopifyDetected, pages };
-  } catch {
+  } catch (error) {
+    console.log(`Browser crawl failed, falling back to fetch: ${error.message}`);
     // Browser launch can fail in restricted environments; use static HTTP crawl fallback.
     return crawlStoreWithFetch(startUrl, maxPages);
   }

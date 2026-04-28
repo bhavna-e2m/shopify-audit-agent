@@ -74,6 +74,7 @@ async function handleAuditRequest(req, res) {
       url,
       maxPages,
       appBaseUrl,
+      createMarkdown,
       createGoogleDoc,
       fastMode,
       includeScreenshots,
@@ -106,8 +107,9 @@ async function handleAuditRequest(req, res) {
 
     const result = await runAudit({
       url: normalized,
-      maxPages: Number(maxPages || (fastMode === false ? 8 : 3)),
-      appBaseUrl: typeof appBaseUrl === "string" ? appBaseUrl : "",
+      maxPages: Number(maxPages || (fastMode === false ? 6 : 2)),
+      appBaseUrl: typeof appBaseUrl === "string" ? appBaseUrl : "", 
+      createMarkdown: createMarkdown !== false,
       additionalPageUrls: normalizedAdditionalPages,
       persistReports: !isVercel,
       docx: false,
@@ -118,22 +120,25 @@ async function handleAuditRequest(req, res) {
       referenceSiteUrls: Array.isArray(referenceSiteUrls) ? referenceSiteUrls : []
     });
 
-    const relativeMdPath = isVercel
-      ? ""
-      : `/${result.outputPath.replace(/\\/g, "/")}`;
+    const relativeMdPath =
+      result.outputPath && !isVercel ? `/${result.outputPath.replace(/\\/g, "/")}` : "";
     let googleDocUrl = "";
-    let googleDocNote = "";
+    let googleDocNote = "";  
     if (createGoogleDoc) {
-      const host = new URL(normalized).hostname.replace(/^www\./, "");
-      const stamp = new Date().toISOString().replace(/[:.]/g, "-");
-      const docResult = await createGoogleDocFromMarkdown({
-        title: `Shopify Audit - ${host} - ${stamp}`,
-        markdown: result.markdown
-      });
-      if (docResult.enabled) {
-        googleDocUrl = docResult.url;
-      } else {
-        googleDocNote = docResult.reason;
+      try {
+        const host = new URL(normalized).hostname.replace(/^www\./, "");
+        const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+        const docResult = await createGoogleDocFromMarkdown({
+          title: `Shopify Audit - ${host} - ${stamp}`,
+          markdown: result.markdown
+        });
+        if (docResult.enabled) {
+          googleDocUrl = docResult.url;
+        } else {
+          googleDocNote = docResult.reason;
+        }
+      } catch (docError) {
+        googleDocNote = docError?.message || "Google Doc creation failed.";
       }
     }
 
@@ -142,10 +147,11 @@ async function handleAuditRequest(req, res) {
       url: normalized,
       pagesAnalyzed: result.pagesAnalyzed,
       markdownPath: relativeMdPath,
-      markdownContent: isVercel ? result.markdown : "",
+      markdownContent: isVercel && createMarkdown !== false ? result.markdown : "",
       screenshots: result.screenshots || [],
       referenceBenchmarks: result.referenceBenchmarks || [],
       referenceSitePoolUsed: result.referenceSitePoolUsed || [],
+      qualityChecks: result.qualityChecks || null,
       googleDocUrl,
       googleDocNote
     });

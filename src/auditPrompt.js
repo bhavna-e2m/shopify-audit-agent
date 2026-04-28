@@ -1,4 +1,6 @@
-export function buildAuditPrompt({ storeUrl, pages, date, screenshotDir, referenceScreenshots = [] }) {
+import { SHOPIFY_STANDARDS } from "./shopifyStandards.js";
+
+export function buildAuditPrompt({ storeUrl, pages, date, screenshotDir, referenceScreenshots = [], performanceData }) {
   return `
 You are a senior Shopify CRO and UX auditor.
 Generate a professional, practical, implementation-ready audit report.
@@ -13,6 +15,13 @@ Context:
 - Screenshot base directory: ${screenshotDir}
 - External reference screenshots provided by user:
 ${referenceScreenshots.length ? referenceScreenshots.map((s, i) => `  ${i + 1}. ${s}`).join("\n") : "  None provided"}
+- Performance audit data: ${performanceData ? JSON.stringify(performanceData, null, 2) : "Not available"}
+- Shopify Standards Reference: Always reference specific Shopify standards in recommendations. Key standards include:
+  * Homepage: Hero above fold, sticky header, trust signals, mobile optimization
+  * Collections: Filter/sort functionality, consistent product grids, clear navigation
+  * Products: Image galleries, clear pricing, prominent CTAs, reviews integration
+  * SEO: Meta titles/descriptions, structured data, clean URLs, heading hierarchy
+  * Technical: Core Web Vitals, mobile responsiveness, security, theme maintenance
 
 Required structure (exact headings):
 1) Summary
@@ -23,7 +32,8 @@ Required structure (exact headings):
 6) Product Page - Shopify Requirements Verification
 7) Product Page - Key Areas of Improvement
 8) Other Pages - Key Areas of Improvement
-9) Final Recommendation
+9) SEO and Technical Audit
+10) Final Recommendation
 
 Writing requirements:
 - Keep tone consultative and actionable.
@@ -32,7 +42,7 @@ Writing requirements:
 - Provide concrete recommendations with rationale.
 - Include "Enhancement Level" style language where issues are minor.
 - Do not invent plugins/apps by name unless clearly needed; stay theme-first.
-- If evidence is weak, phrase as "recommended to validate" not absolute. 
+- If evidence is weak, phrase as "recommended to validate" not absolute.
 - Keep output in Markdown.
 - Keep markdown minimal and clean: use headings and lists only.
 - Do not use inline markdown emphasis markers like **bold** or __bold__ in body text.
@@ -45,6 +55,10 @@ Writing requirements:
 - Write like a senior Shopify consultant: direct, specific, non-generic.
 - Avoid vague phrases such as "can be improved", "could be enhanced", "notably", "overall foundation", unless followed by exact evidence.
 - Do not repeat the same recommendation across sections. If repeated, mention it once and refer to it briefly later.
+- Always reference Shopify standards and best practices in recommendations.
+- Specify changes that align with Shopify's official guidelines, theme standards, and conversion optimization principles.
+- For each recommendation, explain how it follows Shopify UX patterns and improves conversion rates.
+- Reference specific Shopify features, Liquid code patterns, or theme customization approaches where applicable.
 - Keep each verification item compact:
   - Evidence: max 2 short lines
   - Recommendation: max 2 short bullets or 1 short sentence
@@ -56,6 +70,11 @@ Writing requirements:
   - 1 short context line
   - "Current Observation" (1 line)
   - "Why This Matters" (1 line)
+  - "Recommended Action" (1 concise line)
+  - "Impact" (High/Medium/Low)
+  - "Effort" (Low/Medium/High)
+  - "Priority" (P1/P2/P3)
+  - "Confidence" (High confidence / Recommended to validate on live theme)
   - "Recommendations" with 2-3 bullets only
 - Do not write long paragraphs (max 3 lines per paragraph).
 - Keep total output length practical for client consumption. Prefer depth over volume:
@@ -66,17 +85,32 @@ Writing requirements:
   - Section 5: exactly 4 improvement items
   - Section 7: exactly 4 improvement items
   - Section 8: exactly 3 improvement items
+  - Section 9: exactly 5 technical checks
 - Every major recommendation must include:
   1) Current Observation
-  2) Why This Matters (Shopify standard/CRO reason)
-  3) Recommended Action
+  2) Why This Matters (explain how it aligns with Shopify standards, UX best practices, and conversion optimization)
+  3) Recommended Action (specify Shopify theme customization or Liquid code changes)
+  4) Impact (High/Medium/Low conversion impact)
+  5) Effort (Low/Medium/High implementation effort)
+  6) Priority (P1/P2/P3 based on Shopify best practices)
+  7) Confidence (High confidence / Recommended to validate on live theme)
 - Prefer specific implementation language a Shopify developer or merchant can execute.
 - For every audited subsection, always include both:
   - Reference:
   - Screenshot Reference:
+- For every improvement subsection in sections 3, 5, 7, and 8, include all lines below exactly once:
+  - Current Observation:
+  - Why This Matters:
+  - Recommended Action:
+  - Impact:
+  - Effort:
+  - Priority:
+  - Confidence:
+  - Reference:
+  - Screenshot Reference:
 - Screenshot Reference must point to an external reference screenshot URL if provided by user.
 - Do NOT use website-captured screenshot paths as screenshot references unless user explicitly asks.
-- If no external reference screenshot is available for that point, write: "Screenshot Reference: N/A".
+- If no external reference screenshot is available for that point, write: "Screenshot Reference: N/A". 
 - If no change is required, still include:
   - Recommendation: Nothing to change.
   - Reference: Shopify standard check passed based on observed page elements.
@@ -208,3 +242,4 @@ ${JSON.stringify(pages, null, 2)}
 \`\`\`
 `; 
 }
+ 
