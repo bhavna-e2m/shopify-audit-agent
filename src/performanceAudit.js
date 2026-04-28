@@ -1,9 +1,18 @@
-import lighthouse from 'lighthouse';
-import * as puppeteer from 'puppeteer';
-
 export async function runPerformanceAudit(url) {
+  const isVercelRuntime = Boolean(process.env.VERCEL || process.env.NOW_REGION);
+  const isDisabledByEnv = String(process.env.DISABLE_PERFORMANCE_AUDIT || "").toLowerCase() === "true";
+  if (isVercelRuntime || isDisabledByEnv) {
+    return null;
+  }
+
   let browser = null;
   try {
+    // Lazy-load heavy modules so serverless packaging/runtime is not blocked.
+    const [{ default: lighthouse }, puppeteer] = await Promise.all([
+      import("lighthouse"),
+      import("puppeteer")
+    ]);
+
     browser = await puppeteer.launch({
       headless: true,
       args: ['--no-sandbox', '--disable-setuid-sandbox']
@@ -48,4 +57,4 @@ export async function runPerformanceAudit(url) {
       await browser.close();
     }
   }
-}
+} 
