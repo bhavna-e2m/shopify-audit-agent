@@ -164,6 +164,12 @@ app.post("/api/audit", handleAuditRequest);
 // Backward-compatibility: older/cached frontend may call POST /api
 app.post("/api", handleAuditRequest);  
 
+// Some browsers/proxies always request favicon.ico; return empty response
+// to avoid unnecessary serverless invocation failures/noise on Vercel.
+app.get("/favicon.ico", (req, res) => {
+  res.status(204).end();
+});
+
 app.get("*", (req, res) => {
   res.sendFile(path.join(rootDir, "public", "index.html"));
 });
