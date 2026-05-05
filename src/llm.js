@@ -49,10 +49,11 @@ Hard requirements:
 - Keep same high-level section structure.
 - No tables.
 - Ensure recommendations are tied to Shopify standards, not generic website advice.
+- Do not include SEO recommendations.
+- Do not include speed/performance optimization recommendations.
 - Ensure Home Page section has 5-6 subsections with clear "Recommendations:" and actionable bullets.
 - Ensure writing sounds like a human consultant manually auditing the store.
-- For important points, include "Current Observation", "Why This Matters", and "Recommended Action".
-- Every subsection must include "Reference:" and "Screenshot Reference:" lines.
+- Do not include "Reference:" lines.
 - Remove fluff, repetition, and vague statements.
 - Output only final markdown.
 

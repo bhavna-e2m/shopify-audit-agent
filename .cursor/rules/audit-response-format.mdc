@@ -1,0 +1,31 @@
+description: Format store audits in client-friendly consultant style
+alwaysApply: true
+---
+
+# Audit Response Format
+
+Apply this rule only when the user asks for a store/site audit or audit rewrite.
+
+## Required Structure
+
+1. Start with:
+   - `Shopify Store Audit - "<Store Name>"`
+   - `Website: <URL>`
+   - `Summary`
+2. Use page-wise sections in this order:
+   - Home Page - Key Areas of Improvement
+   - Collection Page
+   - Product Page - Key Areas of Improvement
+   - Other Pages - Key Areas of Improvement
+3. In each section, present:
+   - numbered subsection heading
+   - brief issue/observation text in human wording
+   - `Recommendations:` followed by clear action bullets
+4. End with:
+   - `Final Recommendation` (top impact items only)
+
+## Style Constraints
+
+- Do not include: Requirement, Meets, Partially Meets, Does Not Meet.
+- Keep summary to short consultant-style paragraphs.
+- Keep output actionable, direct, and implementation-focused.

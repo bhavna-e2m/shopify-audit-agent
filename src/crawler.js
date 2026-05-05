@@ -134,6 +134,11 @@ function extractSignals(url, html, runtimeHints = {}) {
   const hasCollectionSort =
     /\/collections\//i.test(url) &&
     ($("select[name*='sort'], [class*='sort']").length > 0 || /sort by/i.test(text));
+  const hasProductMediaZoom =
+    /\/products\//i.test(url) &&
+    /(image-magnify-lightbox|product__media-zoom-lightbox|product__media-icon--lightbox|data-zoom|image-zoom|photoswipe|fancybox|magnif|pinch)/i.test(
+      html
+    );
   // Enhanced SEO and accessibility signals
   const metaTitle = cleanText($("title").text());
   const metaDescription = cleanText($("meta[name='description']").attr("content") || "");
@@ -183,6 +188,7 @@ function extractSignals(url, html, runtimeHints = {}) {
       hasHeroSection,
       hasCollectionFilter,
       hasCollectionSort,
+      hasProductMediaZoom,
       hasStickyHeaderDetected: Boolean(runtimeHints.hasStickyHeaderDetected),
       // New SEO flags
       hasMetaTitle,

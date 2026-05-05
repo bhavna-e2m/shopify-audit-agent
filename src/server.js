@@ -85,7 +85,7 @@ async function handleAuditRequest(req, res) {
     } = req.body || {};
     const normalized = normalizeUrl(url || "");
     const isVercel = Boolean(process.env.VERCEL);
-    const defaultMaxPages = isVercel ? 1 : fastMode === false ? 6 : 2;
+    const defaultMaxPages = isVercel ? 1 : fastMode === false ? 6 : 2; 
     const resolvedMaxPages = Number(maxPages || defaultMaxPages);
 
     if (!normalized) {

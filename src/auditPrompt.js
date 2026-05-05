@@ -1,51 +1,75 @@
 import { SHOPIFY_STANDARDS } from "./shopifyStandards.js";
 
-export function buildAuditPrompt({ storeUrl, pages, date, screenshotDir, referenceScreenshots = [], performanceData }) {
+export function buildAuditPrompt({ storeUrl, pages, date }) {
+  const bestPracticeChecklist = {
+    homePage: [
+      SHOPIFY_STANDARDS.homePage.heroSection?.standard,
+      SHOPIFY_STANDARDS.homePage.headerNavigation?.standard,
+      SHOPIFY_STANDARDS.homePage.trustSignals?.standard,
+      SHOPIFY_STANDARDS.homePage.announcementBar?.standard,
+      SHOPIFY_STANDARDS.homePage.featuredCollections?.standard,
+      SHOPIFY_STANDARDS.homePage.socialProof?.standard,
+      SHOPIFY_STANDARDS.homePage.mobileOptimization?.standard,
+      SHOPIFY_STANDARDS.homePage.accessibility?.standard
+    ].filter(Boolean),
+    collectionPage: [
+      SHOPIFY_STANDARDS.collectionPage.filtering?.standard,
+      SHOPIFY_STANDARDS.collectionPage.sorting?.standard,
+      SHOPIFY_STANDARDS.collectionPage.productGrid?.standard,
+      SHOPIFY_STANDARDS.collectionPage.pagination?.standard,
+      SHOPIFY_STANDARDS.collectionPage.breadcrumbs?.standard,
+      SHOPIFY_STANDARDS.collectionPage.emptyState?.standard 
+    ].filter(Boolean),
+    productPage: [
+      SHOPIFY_STANDARDS.productPage.imageGallery?.standard,
+      SHOPIFY_STANDARDS.productPage.pricing?.standard,
+      SHOPIFY_STANDARDS.productPage.addToCart?.standard,
+      SHOPIFY_STANDARDS.productPage.productDescription?.standard,
+      SHOPIFY_STANDARDS.productPage.reviews?.standard,
+      SHOPIFY_STANDARDS.productPage.relatedProducts?.standard,
+      SHOPIFY_STANDARDS.productPage.inventory?.standard,
+      SHOPIFY_STANDARDS.productPage.shipping?.standard
+    ].filter(Boolean),
+    technical: [
+      SHOPIFY_STANDARDS.technical.mobileResponsiveness?.standard,
+      SHOPIFY_STANDARDS.technical.security?.standard,
+      SHOPIFY_STANDARDS.technical.appIntegration?.standard,
+      SHOPIFY_STANDARDS.technical.themeUpdates?.standard
+    ].filter(Boolean)
+  };
+
   return `
 You are a senior Shopify CRO and UX auditor.
 Generate a professional, practical, implementation-ready audit report.
-The report must read like a manually prepared consultant document, not AI-generated notes.
+The report must be concise, client-friendly, and similar to a consultant handoff document.
 
 Context:
 - Store URL: ${storeUrl}
 - Audit date: ${date}
 - Platform focus: Shopify only
 - Theme clues and page signals are provided as JSON.
-- Screenshots captured during crawl are included as screenshotPath.
-- Screenshot base directory: ${screenshotDir}
-- External reference screenshots provided by user:
-${referenceScreenshots.length ? referenceScreenshots.map((s, i) => `  ${i + 1}. ${s}`).join("\n") : "  None provided"}
-- Performance audit data: ${performanceData ? JSON.stringify(performanceData, null, 2) : "Not available"}
-- Shopify Standards Reference: Always reference specific Shopify standards in recommendations. Key standards include:
-  * Homepage: Hero above fold, sticky header, trust signals, mobile optimization
-  * Collections: Filter/sort functionality, consistent product grids, clear navigation
-  * Products: Image galleries, clear pricing, prominent CTAs, reviews integration
-  * SEO: Meta titles/descriptions, structured data, clean URLs, heading hierarchy
-  * Technical: Core Web Vitals, mobile responsiveness, security, theme maintenance
+- Tie recommendations to Shopify UX/CRO best practices where relevant.
 
 Required structure (exact headings):
-1) Summary
-2) Home Page - Shopify Requirements Verification (Section-by-Section)
-3) Home Page - Key Areas of Improvement
-4) Collection Page - Shopify Requirements Verification
-5) Collection Page - Key Areas of Improvement
-6) Product Page - Shopify Requirements Verification
-7) Product Page - Key Areas of Improvement
-8) Other Pages - Key Areas of Improvement
-9) SEO and Technical Audit
-10) Final Recommendation
+1) Shopify Store Audit - "<Store Name or Domain>"
+2) Website: <store URL>
+3) Summary
+4) Home Page - Key Areas of Improvement
+5) Collection Page
+6) Product Page - Key Areas of Improvement
+7) Other Pages - Key Areas of Improvement
+8) Final Recommendation
 
 Writing requirements:
 - Keep tone consultative and actionable.
 - Prioritize conversion-rate improvements, trust-building, merchandising, and usability.
-- Mention what is already working well before suggestions.
-- Provide concrete recommendations with rationale.
-- Include "Enhancement Level" style language where issues are minor.
+- Do not include SEO or page-speed optimization recommendations.
+- Keep findings practical and easy for merchants/developers to implement.
+- Provide concrete recommendations with light rationale.
 - Do not invent plugins/apps by name unless clearly needed; stay theme-first.
 - If evidence is weak, phrase as "recommended to validate" not absolute.
 - Keep output in Markdown.
 - Keep markdown minimal and clean: use headings and lists only.
-- Do not use inline markdown emphasis markers like **bold** or __bold__ in body text.
 - Start with a clear title line: "Shopify Store Audit - <Store Name or Domain>".
 - Keep language client-ready and similar to professional audit documents.
 - Avoid robotic phrasing. Do not use "as an AI", "based on provided data", or similar wording.
@@ -54,187 +78,57 @@ Writing requirements:
 - Prioritize readability and concise output over long narrative text.
 - Write like a senior Shopify consultant: direct, specific, non-generic.
 - Avoid vague phrases such as "can be improved", "could be enhanced", "notably", "overall foundation", unless followed by exact evidence.
-- Do not repeat the same recommendation across sections. If repeated, mention it once and refer to it briefly later.
-- Always reference Shopify standards and best practices in recommendations.
-- Specify changes that align with Shopify's official guidelines, theme standards, and conversion optimization principles.
-- For each recommendation, explain how it follows Shopify UX patterns and improves conversion rates.
-- Reference specific Shopify features, Liquid code patterns, or theme customization approaches where applicable.
-- Keep each verification item compact:
-  - Evidence: max 2 short lines
-  - Recommendation: max 2 short bullets or 1 short sentence
-  - Reference: one short line
-  - Screenshot Reference: one line
-- Avoid repeating the same reasoning across multiple items.
-- Use plain, scannable language with short sentences.
-- For "Key Areas of Improvement" sections, keep each subsection to:
-  - 1 short context line
-  - "Current Observation" (1 line)
-  - "Why This Matters" (1 line)
-  - "Recommended Action" (1 concise line)
-  - "Impact" (High/Medium/Low)
-  - "Effort" (Low/Medium/High)
-  - "Priority" (P1/P2/P3)
-  - "Confidence" (High confidence / Recommended to validate on live theme)
-  - "Recommendations" with 2-3 bullets only
-- Do not write long paragraphs (max 3 lines per paragraph).
-- Keep total output length practical for client consumption. Prefer depth over volume:
-  - Section 2: exactly 9 checks
-  - Section 4: exactly 6 checks
-  - Section 6: exactly 6 checks
-  - Section 3: exactly 6 improvement items
-  - Section 5: exactly 4 improvement items
-  - Section 7: exactly 4 improvement items
-  - Section 8: exactly 3 improvement items
-  - Section 9: exactly 5 technical checks
-- Every major recommendation must include:
-  1) Current Observation
-  2) Why This Matters (explain how it aligns with Shopify standards, UX best practices, and conversion optimization)
-  3) Recommended Action (specify Shopify theme customization or Liquid code changes)
-  4) Impact (High/Medium/Low conversion impact)
-  5) Effort (Low/Medium/High implementation effort)
-  6) Priority (P1/P2/P3 based on Shopify best practices)
-  7) Confidence (High confidence / Recommended to validate on live theme)
-- Prefer specific implementation language a Shopify developer or merchant can execute.
-- For every audited subsection, always include both:
-  - Reference:
-  - Screenshot Reference:
-- For every improvement subsection in sections 3, 5, 7, and 8, include all lines below exactly once:
-  - Current Observation:
-  - Why This Matters:
-  - Recommended Action:
-  - Impact:
-  - Effort:
-  - Priority:
-  - Confidence:
-  - Reference:
-  - Screenshot Reference:
-- Screenshot Reference must point to an external reference screenshot URL if provided by user.
-- Do NOT use website-captured screenshot paths as screenshot references unless user explicitly asks.
-- If no external reference screenshot is available for that point, write: "Screenshot Reference: N/A". 
-- If no change is required, still include:
-  - Recommendation: Nothing to change.
-  - Reference: Shopify standard check passed based on observed page elements.
-  - Screenshot Reference: <relevant screenshotPath or "Not captured">.
+- Do not repeat the same recommendation across sections.
+- Never recommend adding a feature that is already present in the source data flags (for example product image zoom/lightbox).
+- If a feature exists, frame it as optimization of discoverability/quality rather than implementation from scratch.
+- In each page section, write in this style:
+  - numbered subsection heading (example: "3. Above-the-Fold Trust Signals")
+  - one short issue paragraph directly under the heading (human language, not robotic)
+  - a "Recommendations:" label
+  - 3-7 concrete action bullets
+- Do not force "Error:" / "Recommendation:" labels for every line.
+- Keep recommendations concise and implementation-ready.
+- For each subsection, always keep this exact order:
+  1) Heading
+  2) Issue/observation sentence(s)
+  3) Recommendations bullets
+- Do not include these labels or sections anywhere:
+  - Reference
+  - Requirement Check
+  - Status (Meets/Partially Meets/Needs Improvement)
+  - Evidence
+  - Quality Scorecard
+  - "Nothing to change"
+- Do not use tables anywhere.
+- Keep each section issue-focused; include only real problems.
+- Coverage depth is mandatory: include details that top-performing Shopify stores typically implement, not only high-level suggestions.
+- If a critical best-practice item is missing from crawl evidence, add it as "recommended to validate and implement" with practical next steps.
+- Keep recommendations theme-first and implementation-ready for Shopify developers.
+- Section depth targets:
+  - Home Page: 4-6 subsections
+  - Collection Page: 3-5 subsections
+  - Product Page: 4-6 subsections
+  - Other Pages: 2-4 subsections
+- Every subsection must include at least 4 recommendation bullets with concrete execution details.
+- Summary should be 4 short paragraphs in this flow:
+  1) State this is an audit focused on UX, engagement, and conversion.
+  2) Mention current visual/theme foundation and that structure is solid.
+  3) Recommend checking/upgrading to the latest theme version for compatibility/features.
+  4) Close with key opportunity areas (conversion, trust, discovery, merchandising).
+- Keep summary wording natural and consultant-like, similar to:
+  "The store has a solid base... key improvements lie in conversion optimization..."
+- Final Recommendation should include top impact actions only (around 5 bullets).
+- Prefer specific implementation language a Shopify developer can execute.
 
-Shopify requirements verification requirements:
-- Do NOT use tables anywhere in the report.
-- In section 2, use numbered items only with this format for each check:
-  - Section:
-  - Requirement Check:
-  - Status: (Meets / Partially Meets / Needs Improvement)
-  - Evidence:
-  - Recommendation:
-  - Reference:
-  - Screenshot Reference:
-- Status must be exactly one of: Meets, Partially Meets, Needs Improvement.
-- Evaluate at least these home page sections/checks:
-  1. Announcement Bar (optional but if present should be readable and clickable)
-  2. Header and Navigation (discoverability, icon visibility, hover behavior)
-  3. Hero/Banner Above the Fold (clear value proposition and CTA)
-  4. Trust/USP Strip (reviews, guarantees, shipping, warranty, badges)
-  5. Featured Collections/Categories (clear labels and visual hierarchy)
-  6. Featured Products/Best Sellers (merchandising and CTA clarity)
-  7. Social Proof (reviews, testimonials, UGC, press)
-  8. Conversion Content Blocks (why choose us, comparisons, bundles, offers)
-  9. Footer (policy links, contact info, newsletter, trust, spacing/typography consistency)
-- For each row, verify against Shopify online store best practices and theme standards (clarity, accessibility, consistency, conversion intent).
-- If a section is not detected, mark "Needs Improvement" with "Not clearly present in crawl data".
-- Base all findings specifically on Shopify standards:
-  - Online Store UX best practices (navigation, search/discovery, conversion clarity)
-  - Shopify theme standards (section clarity, hierarchy, consistency across templates)
-  - Accessibility basics (readability, contrast, clickable target clarity, heading intent)
-  - Trust and policy clarity (shipping/returns/warranty/contact visibility)
-  - Mobile-first shopping behavior (sticky CTA where relevant, scannable structure)
-- Do not provide generic website advice; tie each recommendation to Shopify storefront standards.
-- Mention Shopify-standard alignment terms where relevant, such as:
-  - visual hierarchy
-  - content discoverability
-  - conversion clarity
-  - trust reinforcement
-  - mobile-first usability
-- For every verification item in Home, Collection, and Product sections:
-  - If compliant, explicitly write: "Nothing to change."
-  - If not compliant, provide exact change recommendation and include a "Reference:" line.
-  - Add a "Screenshot Reference:" line for each non-compliant item using user-provided reference links when available.
-- If evidence is uncertain, write: "Recommended to validate on live theme."
-- "Reference:" must cite either:
-  - specific crawl evidence (page URL/title/text clue), and/or
-  - Shopify standard principle category (e.g., accessibility/readability, CTA clarity, trust visibility).
-
-Home page detailed format requirements (critical):
-- In section 3 ("Home Page - Key Areas of Improvement"), use exactly 5 to 6 numbered subsections.
-- Use these subsection titles when possible:
-  1. Navigation & Header Optimization
-  2. Hero Section Optimization
-  3. Above-the-Fold Trust Signals
-  4. Product Discovery & Merchandising
-  5. Social Proof & User-Generated Content
-  6. Footer Optimization
-- For each subsection:
-  - Start with 1 short line describing current state.
-  - Add "Current Observation" and "Why This Matters" as short lines.
-  - Then add a "Recommendations:" label.
-  - Add 2-3 bullet points with specific actions.
-- Do not leave this section generic; each subsection must contain actionable points.
-- Keep tone similar to a CRO agency audit document.
-- Do not exceed 6 subsections.
-
-Collection page verification requirements:
-- In section 4, provide numbered verification checks covering at least:
-  1. Collection heading clarity
-  2. Intro/SEO content placement and readability
-  3. Filter and sort usability
-  4. Product card information hierarchy (title/price/badges)
-  5. Quick product discovery and scanability
-  6. Trust elements or reassurance near listing context
-- For each check include:
-  - Section:
-  - Requirement Check:
-  - Status:
-  - Evidence:
-  - Recommendation:
-  - Reference:
-  - Screenshot Reference:
-- Keep exactly 6 checks and avoid duplication with section 5.
-
-Product page verification requirements:
-- In section 6, provide numbered verification checks covering at least:
-  1. Above-the-fold clarity (title, price, variants, CTA)
-  2. CTA visibility and mobile usability
-  3. Trust signals (returns, warranty, delivery clarity)
-  4. Product media and informational hierarchy
-  5. Urgency/reassurance messaging quality
-  6. Cross-sell/upsell and recently viewed support
-- For each check include: 
-  - Section:
-  - Requirement Check:
-  - Status:
-  - Evidence:
-  - Recommendation:
-  - Reference:
-  - Screenshot Reference:
-- Product page audit is mandatory and must not be summarized.
-- Section 6 must contain at least 6 numbered checks (6.1 to 6.6 minimum).
-- Section 7 must contain at least 4 numbered improvement subsections (7.1+).
-- Keep section 7 to exactly 4 high-impact items only.
-
-Section-by-section audit requirement:
-- Audit each section one by one in order and do not skip sections.
-- Keep each section explicit and complete even when status is "Meets".
-- Do not leave any subsection without reference lines.
-- Important evidence rules:
-  - If flags.hasHeroSection is true or aboveFoldModule exists on home/general page data, do NOT claim hero is missing.
-  - If flags.hasCollectionFilter or flags.hasCollectionSort is true on collection page data, do NOT claim filters/sort are missing.
-  - If flags.hasStickyHeaderHint is true or flags.hasStickyHeaderDetected is true, do NOT claim sticky header is missing.
-  - Prefer "needs optimization" over "missing" when elements are present but quality can improve.
-  - For hero/banner analysis, evaluate the dominant aboveFoldModule first: verify message + CTA quality.
-
-Quality gate (critical):
-- Do not output filler prose.
-- Do not output duplicate recommendations with different wording.
-- Each recommendation must be implementation-ready (theme section, block, setting, copy, layout, or visual hierarchy change). 
-- Prefer "Nothing to change" where compliant; avoid forcing changes in every area.
-- Final Recommendation must be 5-7 concise bullets, not long paragraphs. 
+Best Shopify benchmark checklist (use this to fill missing details where relevant):
+- Home Page:
+${bestPracticeChecklist.homePage.map((s) => `  - ${s}`).join("\n")}
+- Collection Page:
+${bestPracticeChecklist.collectionPage.map((s) => `  - ${s}`).join("\n")}
+- Product Page:
+${bestPracticeChecklist.productPage.map((s) => `  - ${s}`).join("\n")}
+- Technical / UX baseline (exclude SEO and speed):
+${bestPracticeChecklist.technical.map((s) => `  - ${s}`).join("\n")}
 
 Source data:
 \`\`\`json
