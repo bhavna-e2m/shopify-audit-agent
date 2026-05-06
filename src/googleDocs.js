@@ -181,11 +181,14 @@ function getServiceAccountAuth() {
 function getGoogleAuthContexts() {
   const oauthAuth = getOAuthAuth();
   const serviceAuth = getServiceAccountAuth();
-  // If OAuth user credentials are configured, force OAuth-only mode.
-  // This avoids unexpected fallback to service account credentials
-  // (which can fail with storageQuotaExceeded).
-  if (oauthAuth) return [oauthAuth];
-  return [serviceAuth].filter(Boolean);
+  const authMode = String(process.env.GOOGLE_AUTH_MODE || "auto").trim().toLowerCase();
+
+  if (authMode === "service") return [serviceAuth].filter(Boolean);
+  if (authMode === "oauth") return [oauthAuth].filter(Boolean);
+
+  // Default auto mode: prefer service-account auth for long-term stability
+  // (no user refresh token lifecycle), then fall back to OAuth if needed.
+  return [serviceAuth, oauthAuth].filter(Boolean);
 }
 
 function buildGoogleSetupHint(authMode) {
@@ -198,9 +201,10 @@ function buildGoogleSetupHint(authMode) {
 
 function buildNotConfiguredMessage() {
   return (
-    "Google Docs credentials not configured. Configure OAuth user auth " +
+    "Google Docs credentials not configured. Configure service-account auth " +
+    "(GOOGLE_SERVICE_ACCOUNT_EMAIL, GOOGLE_PRIVATE_KEY) or OAuth user auth " +
     "(GOOGLE_OAUTH_CLIENT_ID, GOOGLE_OAUTH_CLIENT_SECRET, GOOGLE_OAUTH_REFRESH_TOKEN) " +
-    "or service-account auth (GOOGLE_SERVICE_ACCOUNT_EMAIL, GOOGLE_PRIVATE_KEY)."
+    "and optionally set GOOGLE_AUTH_MODE=service|oauth|auto."
   );
 }
 
@@ -319,7 +323,7 @@ export async function createGoogleDocFromMarkdown({ title, markdown }) {
       }
       if (mode === "oauth_user" && isInvalidGrantError(error)) {
         lastError = new Error(
-          "Google OAuth refresh token expired or revoked (invalid_grant). Reconnect Google OAuth and update GOOGLE_OAUTH_REFRESH_TOKEN in .env."
+          "Google OAuth refresh token expired or revoked (invalid_grant). If your OAuth app is in Testing mode, refresh tokens can expire in 7 days. Use service-account auth for long-term stability, or publish OAuth consent screen to Production and reconnect."
         );
         continue;
       }

@@ -7,6 +7,7 @@
   "scripts": {
     "audit": "node src/index.js",
     "dev": "node src/server.js",
+    "google:token": "node scripts/getGoogleRefreshToken.cjs",
     "lint": "node -e \"console.log('No linter configured yet')\""
   },
   "dependencies": {
@@ -16,6 +17,7 @@
     "express": "^4.21.2",
     "googleapis": "^140.0.1",
     "lighthouse": "^13.1.0",
+    "open": "^10.2.0",
     "openai": "^4.104.0",
     "playwright": "^1.55.0",
     "puppeteer": "^24.42.0"
