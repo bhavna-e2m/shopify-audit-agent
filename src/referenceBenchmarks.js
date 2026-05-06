@@ -12,3 +12,4 @@ export function resolveReferenceSites(userProvided = []) {
   if (cleaned.length) return cleaned;
   return DEFAULT_SHOPIFY_REFERENCE_SITES;
 }
+ 

@@ -85,8 +85,9 @@ async function handleAuditRequest(req, res) {
     } = req.body || {};
     const normalized = normalizeUrl(url || "");
     const isVercel = Boolean(process.env.VERCEL);
-    const defaultMaxPages = isVercel ? 1 : fastMode === false ? 6 : 2; 
-    const resolvedMaxPages = Number(maxPages || defaultMaxPages);
+    const fastModeRequested =
+      fastMode === false || String(fastMode).toLowerCase() === "false" ? false : true;
+    const defaultMaxPages = isVercel ? (fastModeRequested ? 1 : 4) : fastModeRequested ? 2 : 6;
 
     if (!normalized) {
       return res.status(400).json({ error: "Invalid or missing URL." });
@@ -106,6 +107,11 @@ async function handleAuditRequest(req, res) {
           .filter((u) => new URL(u).hostname.replace(/^www\./, "") === rootHostname)
           .filter((u, idx, arr) => arr.indexOf(u) === idx)
       : [];
+    const requestedMaxPages = Number(maxPages || defaultMaxPages);
+    const minimumPagesForRequestedExtras = isVercel
+      ? requestedMaxPages
+      : defaultMaxPages + normalizedAdditionalPages.length;
+    const resolvedMaxPages = Math.max(requestedMaxPages, minimumPagesForRequestedExtras);
 
     const result = await runAudit({
       url: normalized,
@@ -115,7 +121,7 @@ async function handleAuditRequest(req, res) {
       additionalPageUrls: normalizedAdditionalPages,
       persistReports: !isVercel,
       docx: false,
-      fastMode: isVercel ? true : fastMode !== false,
+      fastMode: fastModeRequested,
       includeScreenshots: isVercel ? false : includeScreenshots === true,
       includeReferenceBenchmarks: isVercel ? false : includeReferenceBenchmarks === true,
       referenceScreenshots: Array.isArray(referenceScreenshots) ? referenceScreenshots : [],
@@ -154,6 +160,7 @@ async function handleAuditRequest(req, res) {
       referenceBenchmarks: result.referenceBenchmarks || [],
       referenceSitePoolUsed: result.referenceSitePoolUsed || [],
       qualityChecks: result.qualityChecks || null,
+      modeUsed: fastModeRequested ? "Fast" : "Detailed",
       googleDocUrl,
       googleDocNote
     });

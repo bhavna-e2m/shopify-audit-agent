@@ -48,12 +48,15 @@ Refine the following audit to be higher quality and more accurate.
 Hard requirements:
 - Keep same high-level section structure.
 - No tables.
-- Ensure recommendations are tied to Shopify standards, not generic website advice.
+- Keep recommendations tied to Shopify standards, not generic website advice.
 - Do not include SEO recommendations.
 - Do not include speed/performance optimization recommendations.
-- Ensure Home Page section has 5-6 subsections with clear "Recommendations:" and actionable bullets.
-- Ensure writing sounds like a human consultant manually auditing the store.
+- Do not create dedicated SEO or Performance sections.
+- Keep Home Page section at 5-6 subsections with clear "Recommendations:" and actionable bullets.
+- Keep writing like a human consultant manually auditing the store.
+- Do not use "Ensure/ensure" phrasing in recommendation bullets.
 - Do not include "Reference:" lines.
+- In "Other Pages" subsections, print the exact page URL on its own line as: URL: <full page url>.
 - Remove fluff, repetition, and vague statements.
 - Output only final markdown.
 

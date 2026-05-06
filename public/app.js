@@ -150,7 +150,7 @@ form.addEventListener("submit", async (event) => {
       <div><strong>Store:</strong> ${data.url}</div>
       <div><strong>Pages analyzed:</strong> ${data.pagesAnalyzed}</div>
       <div><strong>Format:</strong> ${createMarkdown ? "Markdown (.md)" : "Google Doc only"}</div>
-      <div><strong>Mode:</strong> ${fastMode ? "Fast" : "Detailed"}</div>
+      <div><strong>Mode:</strong> ${data.modeUsed || (fastMode ? "Fast" : "Detailed")}</div>
       ${
         createMarkdown
           ? `<a class="download" href="${markdownHref}" download>Download Markdown</a>`

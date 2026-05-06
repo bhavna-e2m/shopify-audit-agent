@@ -63,7 +63,9 @@ Required structure (exact headings):
 Writing requirements:
 - Keep tone consultative and actionable.
 - Prioritize conversion-rate improvements, trust-building, merchandising, and usability.
-- Do not include SEO or page-speed optimization recommendations.
+- Do not include SEO recommendations.
+- Do not include performance/page-speed optimization recommendations. 
+- Do not create dedicated SEO or Performance sections.
 - Keep findings practical and easy for merchants/developers to implement.
 - Provide concrete recommendations with light rationale.
 - Do not invent plugins/apps by name unless clearly needed; stay theme-first.
@@ -73,6 +75,7 @@ Writing requirements:
 - Start with a clear title line: "Shopify Store Audit - <Store Name or Domain>".
 - Keep language client-ready and similar to professional audit documents.
 - Avoid robotic phrasing. Do not use "as an AI", "based on provided data", or similar wording.
+- Do not use "Ensure/ensure" phrasing in recommendations. Use direct action verbs like "Use", "Add", "Set", "Place", or "Keep".
 - Never use placeholders such as "remaining sections" or "similar approach".
 - Every required section must be fully written.
 - Prioritize readability and concise output over long narrative text.
@@ -92,6 +95,8 @@ Writing requirements:
   1) Heading
   2) Issue/observation sentence(s)
   3) Recommendations bullets
+- In "Other Pages - Key Areas of Improvement", include the exact page URL directly under each subsection heading as:
+  URL: <full page url>
 - Do not include these labels or sections anywhere:
   - Reference
   - Requirement Check
@@ -101,6 +106,7 @@ Writing requirements:
   - "Nothing to change"
 - Do not use tables anywhere.
 - Keep each section issue-focused; include only real problems.
+- If no fix-required issue is detected for a subsection/page, omit that subsection/page from the report.
 - Coverage depth is mandatory: include details that top-performing Shopify stores typically implement, not only high-level suggestions.
 - If a critical best-practice item is missing from crawl evidence, add it as "recommended to validate and implement" with practical next steps.
 - Keep recommendations theme-first and implementation-ready for Shopify developers.
@@ -110,10 +116,10 @@ Writing requirements:
   - Product Page: 4-6 subsections
   - Other Pages: 2-4 subsections
 - Every subsection must include at least 4 recommendation bullets with concrete execution details.
-- Summary should be 4 short paragraphs in this flow:
+- Summary should be 4 short paragraphs in this flow: 
   1) State this is an audit focused on UX, engagement, and conversion.
   2) Mention current visual/theme foundation and that structure is solid.
-  3) Recommend checking/upgrading to the latest theme version for compatibility/features.
+  3) Recommend checking/upgrading to the latest theme version for compatibility/features. 
   4) Close with key opportunity areas (conversion, trust, discovery, merchandising).
 - Keep summary wording natural and consultant-like, similar to:
   "The store has a solid base... key improvements lie in conversion optimization..."

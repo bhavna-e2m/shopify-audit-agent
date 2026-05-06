@@ -136,8 +136,13 @@ function extractSignals(url, html, runtimeHints = {}) {
     ($("select[name*='sort'], [class*='sort']").length > 0 || /sort by/i.test(text));
   const hasProductMediaZoom =
     /\/products\//i.test(url) &&
-    /(image-magnify-lightbox|product__media-zoom-lightbox|product__media-icon--lightbox|data-zoom|image-zoom|photoswipe|fancybox|magnif|pinch)/i.test(
-      html
+    (
+      /(image-magnify-lightbox|product__media-zoom-lightbox|product__media-icon--lightbox|data-zoom|image-zoom|photoswipe|fancybox|magnif|pinch|lightbox|zoom-icon|data-pswp|product-single__thumbnail|glightbox)/i.test(
+        html
+      ) ||
+      $(
+        "[data-zoom], [data-fancybox], [data-lightbox], [class*='zoom'], [class*='lightbox'], [class*='magnify'], [aria-label*='zoom']"
+      ).length > 0
     );
   // Enhanced SEO and accessibility signals
   const metaTitle = cleanText($("title").text());
@@ -260,6 +265,63 @@ function shouldQueueLink(startUrl, link) {
   );
 }
 
+function queueUrlType(startUrl, link, additionalPageSet = new Set()) {
+  if (link === startUrl) return "home";
+  if (/\/collections\//i.test(link)) return "collection";
+  if (/\/products\//i.test(link)) return "product";
+  if (additionalPageSet.has(link)) return "additional";
+  return "other";
+}
+
+function classifyQueuePriority(startUrl, link, additionalPageSet = new Set(), stats = {}) {
+  const type = queueUrlType(startUrl, link, additionalPageSet);
+  const minCollections = 2;
+  const minProducts = 2;
+
+  if (type === "home") return 0;
+
+  // Phase 1: guarantee minimum collection coverage first.
+  if ((stats.collection || 0) < minCollections) {
+    if (type === "collection") return 1;
+    if (type === "product") return 3;
+    if (type === "additional") return 4;
+    return 5;
+  }
+
+  // Phase 2: guarantee product coverage after minimum collections.
+  if ((stats.product || 0) < minProducts) {
+    if (type === "product") return 1;
+    if (type === "collection") return 3;
+    if (type === "additional") return 4;
+    return 5;
+  }
+
+  // Phase 3: process explicit additional pages, then the rest.
+  if (type === "additional") return 2;
+  if (type === "collection") return 3;
+  if (type === "product") return 4;
+  return 5;
+}
+
+function enqueueByPriority(queue, queued, startUrl, link, additionalPageSet = new Set(), stats = {}) {
+  if (!link || queued.has(link)) return;
+  const incomingPriority = classifyQueuePriority(startUrl, link, additionalPageSet, stats);
+  let idx = queue.findIndex(
+    (u) => classifyQueuePriority(startUrl, u, additionalPageSet, stats) > incomingPriority
+  );
+  if (idx === -1) idx = queue.length;
+  queue.splice(idx, 0, link);
+  queued.add(link);
+}
+
+function sortQueueByPriority(queue, startUrl, additionalPageSet = new Set(), stats = {}) {
+  queue.sort(
+    (a, b) =>
+      classifyQueuePriority(startUrl, a, additionalPageSet, stats) -
+      classifyQueuePriority(startUrl, b, additionalPageSet, stats)
+  );
+}
+
 function detectShopifyFromHtml(html) {
   return /shopify|cdn\.shopify\.com|\/cdn\/shop\/|Shopify\.theme/i.test(html); 
 }
@@ -354,7 +416,12 @@ async function saveSectionScreenshotsIfEnabled(page, signal, index, screenshotDi
 }
 
 async function crawlStoreWithFetch(startUrl, maxPages, initialQueue = [startUrl]) {
-  const queue = [...initialQueue];
+  const additionalPageSet = new Set(initialQueue.filter((u) => u !== startUrl));
+  const queue = [];
+  const queued = new Set();
+  const stats = { home: 0, collection: 0, product: 0 };
+  enqueueByPriority(queue, queued, startUrl, startUrl, additionalPageSet, stats);
+  initialQueue.forEach((u) => enqueueByPriority(queue, queued, startUrl, u, additionalPageSet, stats));
   const visited = new Set();
   const pages = [];
   let shopifyDetected = false;
@@ -362,8 +429,10 @@ async function crawlStoreWithFetch(startUrl, maxPages, initialQueue = [startUrl]
   console.log(`Starting fetch-based crawl for: ${startUrl}`);
 
   while (queue.length && pages.length < maxPages) {
+    sortQueueByPriority(queue, startUrl, additionalPageSet, stats);
     const next = queue.shift();
     if (!next || visited.has(next)) continue;
+    queued.delete(next);
     visited.add(next);
 
     console.log(`Fetching: ${next}`);
@@ -393,11 +462,16 @@ async function crawlStoreWithFetch(startUrl, maxPages, initialQueue = [startUrl]
       signal.aboveFoldScreenshotPath = "";
       signal.sectionScreenshots = {};
       pages.push(signal);
+      if (signal.pageType === "general") stats.home += 1;
+      if (signal.pageType === "collection") stats.collection += 1;
+      if (signal.pageType === "product") stats.product += 1;
 
       console.log(`Successfully fetched: ${next} (${signal.pageType})`);
 
       for (const link of signal.links) {
-        if (shouldQueueLink(startUrl, link) && !visited.has(link)) queue.push(link);
+        if (shouldQueueLink(startUrl, link) && !visited.has(link)) {
+          enqueueByPriority(queue, queued, startUrl, link, additionalPageSet, stats);
+        }
       }
     } catch (error) {
       console.log(`Failed to fetch: ${next} - ${error.message}`);
@@ -473,7 +547,14 @@ export async function crawlStore(startUrl, maxPages = 8, options = {}) {
     const context = await browser.newContext();
     const page = await context.newPage();
 
-    const queue = Array.from(new Set([startUrl, ...additionalPageUrls]));
+    const additionalPageSet = new Set(additionalPageUrls);
+    const queue = [];
+    const queued = new Set();
+    const stats = { home: 0, collection: 0, product: 0 };
+    enqueueByPriority(queue, queued, startUrl, startUrl, additionalPageSet, stats);
+    additionalPageUrls.forEach((u) =>
+      enqueueByPriority(queue, queued, startUrl, u, additionalPageSet, stats)
+    );
     const visited = new Set();
     const pages = [];
     let shopifyDetected = false;
@@ -481,8 +562,10 @@ export async function crawlStore(startUrl, maxPages = 8, options = {}) {
     console.log(`Queue length: ${queue.length}, maxPages: ${maxPages}`);
 
     while (queue.length && pages.length < maxPages) {
+      sortQueueByPriority(queue, startUrl, additionalPageSet, stats);
       const next = queue.shift();
       if (!next || visited.has(next)) continue;
+      queued.delete(next);
       visited.add(next);
 
       console.log(`Crawling: ${next}`);
@@ -517,11 +600,16 @@ export async function crawlStore(startUrl, maxPages = 8, options = {}) {
           process.env.AUDIT_SECTION_SCREENSHOT_DIR || process.env.AUDIT_SCREENSHOT_DIR || ""
         );
         pages.push(signal);
+        if (signal.pageType === "general") stats.home += 1;
+        if (signal.pageType === "collection") stats.collection += 1;
+        if (signal.pageType === "product") stats.product += 1;
 
         console.log(`Successfully crawled: ${next} (${signal.pageType})`);
 
         for (const link of signal.links) {
-          if (shouldQueueLink(startUrl, link) && !visited.has(link)) queue.push(link);
+          if (shouldQueueLink(startUrl, link) && !visited.has(link)) {
+            enqueueByPriority(queue, queued, startUrl, link, additionalPageSet, stats);
+          }
         }
       } catch (error) {
         console.log(`Failed to crawl: ${next} - ${error.message}`);

@@ -227,6 +227,14 @@ function enforceSignalConsistency(markdown, signalFacts) {
   }
   if (signalFacts.hasProductMediaZoom) {
     out = out.replace(
+      /no zoom or lightbox functionality detected[^.\n]*\./gi,
+      "Product image zoom/lightbox is present; focus on discoverability and media quality."
+    );
+    out = out.replace(
+      /there is no detected product media zoom functionality[^.\n]*\./gi,
+      "Product media zoom is already available; optimize interaction clarity and media quality."
+    );
+    out = out.replace(
       /limited product visualization and interaction capabilities[^.\n]*\./gi,
       "Product media foundation is present; focus improvements on content quality and merchandising relevance."
     );
@@ -277,6 +285,12 @@ function enforceSignalConsistency(markdown, signalFacts) {
         if (
           signalFacts.hasProductMediaZoom &&
           /(zoom|lightbox|magnif|pinch)/i.test(t)
+        ) {
+          continue;
+        }
+        if (
+          signalFacts.hasProductMediaZoom &&
+          /(add|implement|enable|introduce).*(image|product).*(zoom|lightbox)/i.test(t)
         ) {
           continue;
         }
@@ -348,7 +362,7 @@ function injectQualityScorecard(markdown) {
 
 function removeSeoAndSpeedContent(markdown) {
   if (!markdown) return markdown;
-  const blockedLine = /(seo|search engine|meta description|structured data|rich snippets?|page[-\s]?speed|site speed|speed optimization|performance optimization|lighthouse score|core web vitals?)/i;
+  const blockedLine = /(seo|search engine|meta description|structured data|rich snippets?|page[-\s]?speed|site speed|speed optimization|performance optimization|performance and loading|optimi[sz]e (script|css|image) loading|lighthouse score|core web vitals?)/i;
   const lines = markdown.split(/\r?\n/);
   const cleaned = [];
 
@@ -368,6 +382,32 @@ function removeSeoAndSpeedContent(markdown) {
     .join("\n")
     .replace(/\n{3,}/g, "\n\n")
     .trim();
+}
+
+function removeThemeUpgradeContent(markdown) {
+  if (!markdown) return markdown;
+  return markdown
+    .replace(
+      /(?:^|\n)[^\n]*recommend[^\n]*upgrad(?:e|ing)[^\n]*latest[^\n]*theme[^\n]*\n?/gi,
+      "\n"
+    )
+    .replace(
+      /(?:^|\n)[^\n]*theme version[^\n]*(compatibilit|feature|release|update)[^\n]*\n?/gi,
+      "\n"
+    )
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
+function removeEnsurePhrasing(markdown) {
+  if (!markdown) return markdown;
+  return markdown
+    .replace(/^(\s*[-*]\s*)Ensure\s+/gim, "$1Use ")
+    .replace(/^(\s*[-*]\s*)ensure\s+/gim, "$1Use ")
+    .replace(/\bEnsure that\b/g, "Use")
+    .replace(/\bensure that\b/g, "use")
+    .replace(/\bEnsure\b/g, "Use")
+    .replace(/\bensure\b/g, "use");
 }
 
 function hasAllRequiredSections(markdown, includeOtherPages = true) {
@@ -520,6 +560,84 @@ function removeOtherPagesSectionIfNotApplicable(markdown, includeOtherPages) {
     .replace(/\n{3,}/g, "\n\n")
     .trim();
   return trimmed;
+}
+
+function enforceOtherPageUrlCoverage(markdown, additionalPageUrls = [], includeOtherPages = true) {
+  if (!includeOtherPages) return markdown;
+  if (!Array.isArray(additionalPageUrls) || additionalPageUrls.length === 0) return markdown;
+
+  const lines = markdown.split(/\r?\n/);
+  const headingIdx = lines.findIndex((l) => /^##\s*Other Pages - Key Areas of Improvement/i.test(l));
+  if (headingIdx === -1) return markdown;
+
+  let sectionEnd = lines.length;
+  for (let i = headingIdx + 1; i < lines.length; i += 1) {
+    if (/^##\s+/.test(lines[i])) {
+      sectionEnd = i;
+      break;
+    }
+  }
+
+  const otherSection = lines.slice(headingIdx, sectionEnd).join("\n");
+  const missing = additionalPageUrls.filter(
+    (u) => u && !new RegExp(String(u).replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i").test(otherSection)
+  );
+  if (!missing.length) return markdown;
+  missing.forEach((url) => {
+    console.log(`[audit] Other page omitted (no fix-required issue detected): ${url}`);
+  });
+  return markdown;
+}
+
+function normalizeOtherPagesNumbering(markdown) {
+  if (!markdown) return markdown;
+  const lines = markdown.split(/\r?\n/);
+  const start = lines.findIndex((l) => /^##\s*Other Pages - Key Areas of Improvement/i.test(l));
+  if (start === -1) return markdown;
+
+  let end = lines.length;
+  for (let i = start + 1; i < lines.length; i += 1) {
+    if (/^##\s+/.test(lines[i])) {
+      end = i;
+      break;
+    }
+  }
+
+  let counter = 1;
+  for (let i = start + 1; i < end; i += 1) {
+    const line = lines[i].trim();
+    const match = line.match(/^(?:\*\*)?\d+\.\s+(.+?)(?:\*\*)?$/);
+    if (!match) continue;
+    const title = (match[1] || "").trim();
+    lines[i] = `${counter}. ${title}`;
+    counter += 1;
+  }
+
+  return lines.join("\n").replace(/\n{3,}/g, "\n\n").trim();
+}
+
+function dropRecommendationsForNoFixSections(markdown) {
+  if (!markdown) return markdown;
+  const lines = markdown.split(/\r?\n/);
+  const out = [];
+
+  for (let i = 0; i < lines.length; i += 1) {
+    out.push(lines[i]);
+    if (!/No critical fixes identified from captured evidence\./i.test(lines[i])) continue;
+
+    let j = i + 1;
+    while (j < lines.length && /^\s*$/.test(lines[j])) {
+      out.push(lines[j]);
+      j += 1;
+    }
+    if (j < lines.length && /^\s*Recommendations:\s*$/i.test(lines[j])) {
+      j += 1;
+      while (j < lines.length && /^\s*[-*]\s+/.test(lines[j])) j += 1;
+      i = j - 1;
+    }
+  }
+
+  return out.join("\n").replace(/\n{3,}/g, "\n\n").trim();
 }
 
 function appendScreenshotAssets(markdown, pages) {
@@ -833,6 +951,8 @@ CRITICAL REPAIR INSTRUCTIONS:
       if (!markdownRaw) continue;
       markdown = sanitizeMarkdown(markdownRaw);
       markdown = removeSeoAndSpeedContent(markdown);
+      markdown = removeThemeUpgradeContent(markdown);
+      markdown = removeEnsurePhrasing(markdown);
       const fieldCoverage = scoreIssueFieldCoverage(markdown);
       const valid =
         hasAllRequiredSections(markdown, includeOtherPages) &&
@@ -863,6 +983,8 @@ CRITICAL REPAIR INSTRUCTIONS:
     if (markdownRaw) {
       markdown = sanitizeMarkdown(markdownRaw);
       markdown = removeSeoAndSpeedContent(markdown);
+      markdown = removeThemeUpgradeContent(markdown);
+      markdown = removeEnsurePhrasing(markdown);
       success = hasAllRequiredSections(markdown, includeOtherPages) && !looksLikePlaceholder(markdown);
     }
   }
@@ -893,6 +1015,8 @@ CRITICAL REPAIR INSTRUCTIONS:
   }
 
   markdown = removeSeoAndSpeedContent(markdown);
+  markdown = removeThemeUpgradeContent(markdown);
+  markdown = removeEnsurePhrasing(markdown);
 
   if (autoReferenceShots.length) {
     const refLines = ["", "## Reference Benchmark Screenshots", ""];
@@ -906,6 +1030,9 @@ CRITICAL REPAIR INSTRUCTIONS:
   const signalFacts = aggregateDetectedSignals(pages);
   markdown = enforceSignalConsistency(markdown, signalFacts);
   markdown = removeOtherPagesSectionIfNotApplicable(markdown, includeOtherPages);
+  markdown = enforceOtherPageUrlCoverage(markdown, additionalPageUrls, includeOtherPages);
+  markdown = normalizeOtherPagesNumbering(markdown);
+  markdown = dropRecommendationsForNoFixSections(markdown);
   markdown = enforceImprovementFields(markdown);
   let normalizedStatusCount = 0;
   const normalizedStatuses = normalizeInvalidStatusValues(markdown);
@@ -939,8 +1066,13 @@ ${reliabilityChecks.failures.map((f, idx) => `${idx + 1}. ${f}`).join("\n")}
     if (repairedRaw) {
       let repaired = sanitizeMarkdown(repairedRaw);
       repaired = removeSeoAndSpeedContent(repaired);
+      repaired = removeThemeUpgradeContent(repaired);
+      repaired = removeEnsurePhrasing(repaired);
       repaired = enforceSignalConsistency(repaired, signalFacts);
       repaired = removeOtherPagesSectionIfNotApplicable(repaired, includeOtherPages);
+      repaired = enforceOtherPageUrlCoverage(repaired, additionalPageUrls, includeOtherPages);
+      repaired = normalizeOtherPagesNumbering(repaired);
+      repaired = dropRecommendationsForNoFixSections(repaired);
       repaired = enforceImprovementFields(repaired);
       const repairedNormalizedStatuses = normalizeInvalidStatusValues(repaired);
       normalizedStatusCount = repairedNormalizedStatuses.invalidCount;
